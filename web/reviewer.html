@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>论文审阅</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e8eeeb; color: #18342e; font: 14px system-ui, "Microsoft YaHei", sans-serif; }
+    #status { position: sticky; top: 0; z-index: 2; padding: 9px 14px; background: #143b34; color: #eaf6f1; }
+    #pages { padding: 18px; display: grid; gap: 18px; justify-content: center; }
+    .page { position: relative; background: white; box-shadow: 0 3px 18px rgba(0,0,0,.18); }
+    canvas { display: block; }
+    .textLayer { position: absolute; inset: 0; overflow: hidden; line-height: 1; text-size-adjust: none; }
+    .textLayer span { position: absolute; white-space: pre; transform-origin: 0 0; color: transparent; cursor: text; }
+    .textLayer ::selection { background: rgba(13,139,114,.34); color: transparent; }
+  </style>
+</head>
+<body>
+  <div id="status">正在加载 PDF。选中文字后会自动同步到“审阅选区锚点”。</div>
+  <main id="pages"></main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+  <script type="module">
+    import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    const params = new URLSearchParams(location.search);
+    const pdfUrl = params.get('pdf');
+    const pages = document.getElementById('pages');
+    const status = document.getElementById('status');
+    const sendSelection = () => {
+      const text = window.getSelection().toString().replace(/\s+/g, ' ').trim();
+      if (text) window.parent.postMessage({ type: 'paperformat-selection', text }, '*');
+    };
+    document.addEventListener('mouseup', () => setTimeout(sendSelection, 0));
+    document.addEventListener('keyup', () => setTimeout(sendSelection, 0));
+    try {
+      const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+      status.textContent = `已加载 ${pdf.numPages} 页。选中文字后会自动同步到“审阅选区锚点”。`;
+      for (let number = 1; number <= pdf.numPages; number++) {
+        const page = await pdf.getPage(number);
+        const viewport = page.getViewport({ scale: 1.45 });
+        const wrapper = document.createElement('section');
+        wrapper.className = 'page';
+        wrapper.style.width = `${viewport.width}px`;
+        wrapper.style.height = `${viewport.height}px`;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        wrapper.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const layer = document.createElement('div');
+        layer.className = 'textLayer';
+        wrapper.appendChild(layer);
+        const text = await page.getTextContent();
+        for (const item of text.items) {
+          if (!('str' in item)) continue;
+          const span = document.createElement('span');
+          const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+          const fontHeight = Math.hypot(transform[2], transform[3]);
+          const angle = Math.atan2(transform[1], transform[0]);
+          span.textContent = item.str;
+          span.style.left = `${transform[4]}px`;
+          span.style.top = `${transform[5] - fontHeight}px`;
+          span.style.fontSize = `${fontHeight}px`;
+          span.style.fontFamily = 'serif';
+          span.style.transform = `rotate(${angle}rad)`;
+          layer.appendChild(span);
+        }
+        pages.appendChild(wrapper);
+      }
+    } catch (error) {
+      status.textContent = `PDF 审阅器加载失败：${error.message}`;
+    }
+  </script>
+</body>
+</html>
