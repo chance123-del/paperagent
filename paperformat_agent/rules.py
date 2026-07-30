@@ -54,11 +54,12 @@ def load_rules(rule_path: str | Path) -> dict:
 
 
 def rules_for_source_kind(rules: dict, source_kind: str) -> dict:
-    """Never add placeholder prose to an imported author manuscript."""
+    """Keep author prose unchanged for every supported input format."""
     adapted = copy.deepcopy(rules)
-    if source_kind in {"docx", "pdf", "md", "markdown"}:
-        adapted.get("abstract", {}).update({"auto_insert": False})
-        adapted.get("keywords", {}).update({"auto_insert": False})
+    # Rule templates describe requirements; they must not create manuscript prose.
+    # Missing content remains a reported issue for the author to address.
+    adapted.get("abstract", {}).update({"auto_insert": False})
+    adapted.get("keywords", {}).update({"auto_insert": False})
     return adapted
 
 

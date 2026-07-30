@@ -16,11 +16,57 @@ def _plain_latex(value: str) -> str:
     return value.replace("{", "").replace("}", "").strip()
 
 
+def _bibliography_entries(tex_path: Path, project_dir: Path) -> list[tuple[str, str]]:
+    """Read rendered BibTeX entries when available, with a simple local fallback."""
+    bbl_path = tex_path.with_suffix(".bbl")
+    if bbl_path.exists():
+        content = bbl_path.read_text(encoding="utf-8", errors="replace")
+        matches = re.finditer(
+            r"\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}\s*(.*?)(?=\\bibitem|\\end\{thebibliography\})",
+            content,
+            re.DOTALL,
+        )
+        entries = [(match.group(1).strip(), _plain_latex(match.group(2))) for match in matches]
+        if entries:
+            return entries
+
+    bibliography = re.search(r"\\bibliography\{([^}]+)\}", tex_path.read_text(encoding="utf-8", errors="replace"))
+    if not bibliography:
+        return []
+    bib_path = project_dir / f"{bibliography.group(1).strip()}.bib"
+    if not bib_path.exists():
+        return []
+    content = bib_path.read_text(encoding="utf-8", errors="replace")
+    entries: list[tuple[str, str]] = []
+    for match in re.finditer(r"(?im)^\s*@\w+\s*\{\s*([^,\s]+)\s*,(.*?)(?=^\s*@\w+\s*\{|\Z)", content, re.DOTALL):
+        key, fields = match.group(1).strip(), match.group(2)
+        values = {
+            name.lower(): _plain_latex(value)
+            for name, value in re.findall(r'(?im)^\s*(author|title|journal|publisher|year)\s*=\s*[{\"]([^}\"]+)[}\"]', fields)
+        }
+        parts = [values[name] for name in ("author", "title", "journal", "publisher", "year") if values.get(name)]
+        if parts:
+            entries.append((key, ". ".join(parts) + "."))
+    return entries
+
+
+def _word_text(value: str, citation_numbers: dict[str, int]) -> str:
+    def replace_citation(match: re.Match[str]) -> str:
+        keys = [key.strip() for key in match.group(1).split(",") if key.strip()]
+        labels = [str(citation_numbers[key]) for key in keys if key in citation_numbers]
+        return f"[{', '.join(labels)}]" if labels else ""
+
+    value = re.sub(r"\\cite(?:[a-zA-Z*]+)?(?:\[[^\]]*\])?\{([^}]+)\}", replace_citation, value)
+    return _plain_latex(value)
+
+
 def _fallback_docx(tex_path: Path, output_path: Path, project_dir: Path) -> str:
     from docx import Document
     from docx.shared import Cm, Pt
 
     source = tex_path.read_text(encoding="utf-8", errors="replace")
+    bibliography_entries = _bibliography_entries(tex_path, project_dir)
+    citation_numbers = {key: number for number, (key, _) in enumerate(bibliography_entries, start=1)}
     document = Document()
     section = document.sections[0]
     section.top_margin = Cm(2.54)
@@ -41,7 +87,7 @@ def _fallback_docx(tex_path: Path, output_path: Path, project_dir: Path) -> str:
 
     def flush() -> None:
         if paragraph:
-            text = _plain_latex(" ".join(paragraph))
+            text = _word_text(" ".join(paragraph), citation_numbers)
             if text:
                 document.add_paragraph(text)
             paragraph.clear()
@@ -63,7 +109,7 @@ def _fallback_docx(tex_path: Path, output_path: Path, project_dir: Path) -> str:
         heading = re.match(r"\\(section|subsection|subsubsection)\{(.+)\}", line)
         if heading:
             flush()
-            document.add_heading(_plain_latex(heading.group(2)), level={"section": 1, "subsection": 2, "subsubsection": 3}[heading.group(1)])
+            document.add_heading(_word_text(heading.group(2), citation_numbers), level={"section": 1, "subsection": 2, "subsubsection": 3}[heading.group(1)])
             continue
         if line.startswith(r"\begin{figure}"):
             flush()
@@ -91,6 +137,10 @@ def _fallback_docx(tex_path: Path, output_path: Path, project_dir: Path) -> str:
         paragraph.append(line)
 
     flush()
+    if bibliography_entries:
+        document.add_heading("References", level=1)
+        for number, (_, entry) in enumerate(bibliography_entries, start=1):
+            document.add_paragraph(f"[{number}] {entry}")
     document.core_properties.title = _plain_latex(title.group(1)) if title else tex_path.stem
     document.save(output_path)
     return "Word exported with the built-in structured DOCX converter (Pandoc was not found)."

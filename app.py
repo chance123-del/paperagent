@@ -693,6 +693,7 @@ def build_demo() -> gr.Blocks:
 
         with gr.Group(elem_id="stage-input", elem_classes=["panel"]):
             gr.Markdown("### 论文输入")
+            gr.Markdown("原稿正文、数据与结论将保持不变；系统只转换格式，并将缺失的必要内容记录在格式报告中。")
             with gr.Row():
                 uploaded = gr.File(label="上传论文", type="filepath", file_types=[".docx", ".pdf", ".md", ".markdown", ".tex", ".zip"])
                 local_path = gr.Textbox(label="本地论文路径", placeholder=r"D:\Documents\my-paper.docx")
