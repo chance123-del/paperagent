@@ -69,27 +69,17 @@ REVIEW_BRIDGE_JS = """
       mount.insertBefore(page, input);
       return page;
     };
-    const pages = [makePage(1), makePage(2), makePage(3), makePage(4)];
+    const pages = [makePage(1), makePage(2), makePage(3)];
     const labels = {
-      input: '<strong>01 论文与规则</strong>上传原稿并设置目标格式',
-      rules: '<strong>02 图表与文献</strong>插入图、表、链接，再设置参考文献',
-      review: '<strong>03 预览与修订</strong>检查 PDF 并应用反馈',
-      export: '<strong>04 正式交付</strong>导出 PDF、Word 和 LaTeX 源码',
+      input: '<strong>01 上传材料</strong>原稿、格式依据与文献库',
+      rules: '<strong>02 配置规则</strong>论文版式与参考文献格式',
+      delivery: '<strong>03 预览与产出</strong>审阅并导出正式文件',
     };
     document.querySelectorAll('.workflow-step').forEach((button) => {
       if (labels[button.dataset.target]) button.innerHTML = labels[button.dataset.target];
     });
-    pages[0].append(input, rules);
-
-    // Place insertion tools ahead of bibliography settings on page two.
-    const bibliography = assets.querySelector(':scope > .accordion');
-    if (bibliography) {
-      bibliography.classList.add('bibliography-tools');
-      const bibliographyGuide = document.createElement('div');
-      bibliographyGuide.className = 'action-guide bibliography-guide';
-      bibliographyGuide.innerHTML = '<strong>参考文献提醒：</strong>完成图表与链接插入后，再上传 .bib 文献库。正文请使用 [1]、[2,3] 或 [4-6] 这类数字标记，生成后查看引用映射。';
-      bibliography.prepend(bibliographyGuide);
-    }
+    pages[0].append(input);
+    pages[1].append(rules, assets);
     const reviewAccordions = Array.from(review.querySelectorAll(':scope > .accordion'));
     reviewAccordions.slice(1, 3).forEach((tool, index) => {
       const batch = index === 1;
@@ -100,18 +90,14 @@ REVIEW_BRIDGE_JS = """
         ? '<strong>批量替换提醒：</strong>正文中先写 [Fig1]、[图1]、[Table1] 或 [表1]，再上传 ZIP 素材包。请先在第 1 页生成预览，随后回到这里执行替换。'
         : '<strong>插入提醒：</strong>先在第 1 页生成预览；再选择公式、图片、表格或超链接，填写目标章节或 PDF 锚点，最后点击“插入并重新编译”。';
       tool.prepend(guide);
-      if (bibliography) assets.insertBefore(tool, bibliography);
-      else assets.append(tool);
     });
-    pages[1].append(assets);
-    pages[2].append(review);
-    pages[3].append(exportStage);
+    pages[2].append(review, exportStage);
     return true;
   };
 
   const switchWorkflowStage = (target) => {
     if (!setupPages()) return;
-    const targets = { input: 1, rules: 2, review: 3, export: 4 };
+    const targets = { input: 1, rules: 2, delivery: 3 };
     const pageNumber = targets[target];
     if (!pageNumber) return;
     document.querySelectorAll('.workflow-step').forEach((button) => {
@@ -182,7 +168,7 @@ body { background: var(--canvas) !important; }
 #masthead h1 { position: relative; margin: 0; font-size: 32px; line-height: 1.12; letter-spacing: 0; color: #fff; }
 #masthead p { position: relative; max-width: 660px; margin: 10px 0 0; color: #c8ddd7; font-size: 14px; line-height: 1.6; }
 .workflow {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px;
   margin: 0 0 22px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
   background: var(--line); box-shadow: 0 3px 12px rgba(34, 64, 55, 0.04);
 }
@@ -683,23 +669,26 @@ def build_demo() -> gr.Blocks:
               <p>科研论文格式智能体</p>
             </section>
             <section class="workflow" aria-label="论文处理流程">
-              <button type="button" class="workflow-step active" data-target="input" aria-current="step"><strong>01 上传论文</strong>Word、PDF、Markdown 或 LaTeX</button>
-              <button type="button" class="workflow-step" data-target="rules"><strong>02 选择要求</strong>期刊、模板或通用格式</button>
-              <button type="button" class="workflow-step" data-target="review"><strong>03 在线审阅</strong>预览并定位需要调整的位置</button>
-              <button type="button" class="workflow-step" data-target="export"><strong>04 正式导出</strong>PDF、Word 与 LaTeX 源码</button>
+              <button type="button" class="workflow-step active" data-target="input" aria-current="step"><strong>01 上传材料</strong>原稿、格式依据与文献库</button>
+              <button type="button" class="workflow-step" data-target="rules"><strong>02 配置规则</strong>论文版式与参考文献格式</button>
+              <button type="button" class="workflow-step" data-target="delivery"><strong>03 预览与产出</strong>审阅并导出正式文件</button>
             </section>
             """
         )
 
         with gr.Group(elem_id="stage-input", elem_classes=["panel"]):
-            gr.Markdown("### 论文输入")
+            gr.Markdown("### 上传材料")
             gr.Markdown("原稿正文、数据与结论将保持不变；系统只转换格式，并将缺失的必要内容记录在格式报告中。")
             with gr.Row():
                 uploaded = gr.File(label="上传论文", type="filepath", file_types=[".docx", ".pdf", ".md", ".markdown", ".tex", ".zip"])
                 local_path = gr.Textbox(label="本地论文路径", placeholder=r"D:\Documents\my-paper.docx")
+            with gr.Accordion("格式与文献材料", open=True, elem_classes=["advanced"]):
+                target_guide = gr.File(label="上传格式要求或官方模板（可选）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"])
+                reference_article = gr.File(label="上传公开参考论文（PDF / Word，可选）", type="filepath", file_types=[".pdf", ".docx"])
+                bibliography_file = gr.File(label="上传个人参考文献库（BibTeX .bib，可选）", type="filepath", file_types=[".bib"])
 
         with gr.Group(elem_id="stage-rules", elem_classes=["panel"]):
-            gr.Markdown("### 目标格式要求")
+            gr.Markdown("### 论文与参考文献规则")
             with gr.Row(elem_classes=["match-row"]):
                 target_name = gr.Textbox(label="目标期刊名称（可选）", placeholder="例如：IEEE Transactions on ...", scale=5)
                 match_button = gr.Button("匹配期刊", elem_id="match", scale=1)
@@ -708,17 +697,12 @@ def build_demo() -> gr.Blocks:
                 rule_file = gr.Dropdown(label="基础格式规则", choices=rule_choices, value=RULE_NONE)
             journal_match = gr.Markdown("", visible=False)
             requirement_text = gr.Textbox(label="直接填写排版要求（可选）", lines=3, placeholder="例如：A4、页边距 2.5cm、1.5 倍行距、参考文献 IEEEtran")
-            target_guide = gr.File(label="上传格式要求或官方模板（可选）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"])
-            with gr.Accordion("参考依据", open=False, elem_classes=["advanced"]):
-                reference_article = gr.File(label="上传公开参考论文（PDF / Word）", type="filepath", file_types=[".pdf", ".docx"])
+            with gr.Accordion("规则检查", open=False, elem_classes=["advanced"]):
                 rule_summary = gr.Markdown(value=_rule_summary(RULE_NONE))
 
         with gr.Group(elem_id="stage-assets", elem_classes=["panel"]):
-            gr.Markdown("### 生成与交付")
+            gr.Markdown("### 生成预览")
             output_path = gr.Textbox(label="输出目录", value=str(OUTPUT_DIR), placeholder=r"D:\PaperOutput")
-            with gr.Accordion("参考文献", open=False, elem_classes=["advanced"]):
-                gr.Markdown("正文中可只写数字标记，如 `[1]`、`[2,3]`、`[4-6]`。上传 BibTeX 文献库后，系统按库内顺序建立映射，并按目标期刊生成文中引用和文末参考文献。")
-                bibliography_file = gr.File(label="上传个人参考文献库（BibTeX .bib）", type="filepath", file_types=[".bib"])
             run_button = gr.Button("生成排版工程", variant="primary", elem_id="run")
 
         with gr.Group(elem_id="stage-review", elem_classes=["results"]):
