@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import re
+import sys
 import threading
 from pathlib import Path
 
@@ -16,6 +17,8 @@ def resolve_tectonic_binary(explicit_path: str | None = None) -> str | None:
     if explicit_path:
         candidates.append(Path(explicit_path))
 
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    candidates.append(bundle_root / "tools" / "tectonic.exe")
     candidates.append(Path.cwd() / "tools" / "tectonic.exe")
     which_path = shutil.which("tectonic")
     if which_path:
