@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import zipfile
 
+from .archive_safety import safe_extract_zip
 from .source_converter import load_source, render_latex
 
 
@@ -32,16 +33,7 @@ def _copy_directory_contents(source_dir: Path, target_dir: Path) -> None:
 
 def _extract_zip(zip_path: Path, target_dir: Path) -> None:
     with zipfile.ZipFile(zip_path, "r") as archive:
-        root = target_dir.resolve()
-        for member in archive.infolist():
-            destination = (target_dir / member.filename).resolve()
-            if not str(destination).startswith(str(root) + "\\") and destination != root:
-                raise ValueError("Uploaded ZIP contains an unsafe path.")
-            if member.is_dir():
-                continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(member) as source, destination.open("wb") as output:
-                shutil.copyfileobj(source, output)
+        safe_extract_zip(archive, target_dir)
 
 
 def _looks_like_main_tex(path: Path) -> bool:

@@ -11,6 +11,7 @@ import gradio as gr
 
 from paperformat_agent.analyzer import analyze
 from paperformat_agent.annotations import load_annotations
+from paperformat_agent.asset_manifest import build_asset_manifest, write_asset_manifest
 from paperformat_agent.bibliography import add_bibliography_to_project, apply_bibliography, apply_numeric_markers, remove_embedded_reference_list
 from paperformat_agent.feedback import apply_text_feedback, save_feedback_evidence
 from paperformat_agent.exporter import export_docx_from_tex
@@ -18,7 +19,7 @@ from paperformat_agent.guidelines import apply_guideline_overrides, apply_requir
 from paperformat_agent.hybrid_insert import build_block, insert_block
 from paperformat_agent.journal_resolver import JOURNAL_PROFILES, apply_journal_profile, profile_choices, resolve_journal
 from paperformat_agent.models import RepairAction
-from paperformat_agent.placeholders import apply_placeholder_assets, find_placeholders, parse_caption_lines, unpack_bundle
+from paperformat_agent.placeholders import apply_placeholder_assets, find_placeholders, parse_caption_lines, scan_assets, unpack_bundle
 from paperformat_agent.project_io import find_main_tex, package_project, prepare_project
 from paperformat_agent.reference_style import apply_reference_article_style
 from paperformat_agent.repairer import repair
@@ -333,6 +334,14 @@ def _write_delivery_gate(run_dir: Path, blockers: list[str], notices: list[str] 
     )
 
 
+def _write_asset_manifest(bundle_dir: Path, tex_text: str, project_dir: Path) -> list[dict[str, object]]:
+    placeholders = find_placeholders(tex_text)
+    assets, ignored = scan_assets(bundle_dir)
+    records = build_asset_manifest(bundle_dir, placeholders, assets, ignored)
+    write_asset_manifest(records, project_dir)
+    return records
+
+
 def _load_delivery_gate(run_dir: Path) -> dict:
     path = run_dir / DELIVERY_GATE
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"blockers": [], "notices": []}
@@ -470,6 +479,7 @@ def run_agent(
             annotations = load_annotations(initial_annotation_bundle, run_dir)
         except ValueError as exc:
             raise gr.Error(str(exc)) from exc
+        _write_asset_manifest(bundle_dir, repaired_text, project.project_dir)
         repaired_text, matched, missing, duplicate = apply_placeholder_assets(
             repaired_text,
             bundle_dir,
@@ -711,8 +721,10 @@ def run_placeholder_insert(
     # carries an explicit prefix policy and can be audited after delivery.
     figure_captions.update(annotations.figures)
     table_captions.update(annotations.tables)
+    current_tex = read_text_best_effort(source_tex)[0]
+    _write_asset_manifest(bundle_dir, current_tex, run_dir / "project")
     updated, matched, missing, duplicate = apply_placeholder_assets(
-        read_text_best_effort(source_tex)[0],
+        current_tex,
         bundle_dir,
         run_dir / "project",
         rules,

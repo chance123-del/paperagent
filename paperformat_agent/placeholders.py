@@ -6,6 +6,7 @@ import re
 import shutil
 import zipfile
 
+from .archive_safety import safe_extract_zip
 from .hybrid_insert import build_block, replace_placeholder
 
 
@@ -53,7 +54,7 @@ def unpack_bundle(bundle_path: str | None, workspace_dir: Path) -> Path:
     destination.mkdir(parents=True, exist_ok=True)
     if source.suffix.lower() == ".zip":
         with zipfile.ZipFile(source, "r") as archive:
-            archive.extractall(destination)
+            safe_extract_zip(archive, destination)
         return destination
     copied = destination / source.name
     shutil.copy2(source, copied)
@@ -105,6 +106,7 @@ def apply_placeholder_assets(
             continue
         if len(candidates) > 1:
             duplicate.append(f"{marker} -> {', '.join(item.display_name for item in candidates)}")
+            continue
         selected = candidates[0]
         caption_map = figure_captions if selected.kind == "Figure" else table_captions
         caption = caption_map.get(key, "")

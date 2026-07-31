@@ -8,6 +8,7 @@ import re
 import shutil
 import zipfile
 
+from .archive_safety import safe_extract_zip
 
 REQUIRED_SHEETS = {"Figures", "Tables", "Links"}
 CAPTION_COLUMNS = {
@@ -32,19 +33,6 @@ def _key(value: object) -> str:
     return re.sub(r"[\s_.()\-]+", "", normalized)
 
 
-def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
-    destination_root = destination.resolve()
-    for member in archive.infolist():
-        target = (destination / member.filename).resolve()
-        if not str(target).startswith(str(destination_root) + "\\") and target != destination_root:
-            raise ValueError("Annotation ZIP contains an unsafe path.")
-        if member.is_dir():
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with archive.open(member) as source, target.open("wb") as output:
-            shutil.copyfileobj(source, output)
-
-
 def _workbook_path(upload: str | None, workspace: Path) -> Path | None:
     if not upload:
         return None
@@ -58,7 +46,7 @@ def _workbook_path(upload: str | None, workspace: Path) -> Path | None:
         shutil.rmtree(destination)
     destination.mkdir(parents=True)
     with zipfile.ZipFile(source, "r") as archive:
-        _safe_extract(archive, destination)
+        safe_extract_zip(archive, destination)
     workbooks = list(destination.rglob("*.xlsx"))
     if len(workbooks) != 1:
         raise ValueError("Annotation ZIP must contain exactly one .xlsx workbook.")
