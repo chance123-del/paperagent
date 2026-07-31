@@ -43,6 +43,20 @@ RUN_CONFIG = "run_config.json"
 DELIVERY_GATE = "delivery_gate.json"
 REVIEWER_PAGE = BASE_DIR / "web" / "reviewer.html"
 ANNOTATION_TEMPLATE = BASE_DIR / "outputs" / "annotations_template" / "annotations.xlsx"
+TEMPLATE_DIR = BASE_DIR / "templates"
+ASSET_TEMPLATE_SOURCE = TEMPLATE_DIR / "asset_bundle_template"
+FORMULA_TEMPLATE = TEMPLATE_DIR / "formulas.template.json"
+
+
+def _asset_bundle_template() -> Path | None:
+    """Build the downloadable ZIP from tracked template source files."""
+    if not ASSET_TEMPLATE_SOURCE.exists():
+        return None
+    destination_dir = OUTPUT_DIR / "templates"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    archive = destination_dir / "asset_bundle_template.zip"
+    shutil.make_archive(str(archive.with_suffix("")), "zip", root_dir=str(ASSET_TEMPLATE_SOURCE))
+    return archive
 
 
 def _reviewer_html(pdf_path: str | None) -> str:
@@ -767,6 +781,7 @@ def run_placeholder_insert(
 def build_demo() -> gr.Blocks:
     rule_choices = _rule_dropdown_choices()
     profile_choices_ui = _profile_dropdown_choices()
+    asset_template = _asset_bundle_template()
     with gr.Blocks(title="PaperFormat Agent") as demo:
         gr.HTML(
             """
@@ -798,10 +813,21 @@ def build_demo() -> gr.Blocks:
                 initial_asset_bundle = gr.File(label="图表素材压缩包（ZIP，可选）", type="filepath", file_types=[".zip"])
                 initial_annotation_bundle = gr.File(label="图表注/表注模板（XLSX 或 ZIP，可选）", type="filepath", file_types=[".xlsx", ".zip"])
                 formula_bundle = gr.File(label="公式合集（ZIP 或 formulas.json，可选）", type="filepath", file_types=[".zip", ".json"])
+            with gr.Row():
                 gr.DownloadButton(
-                    "下载图表注模板",
+                    "下载图表素材包模板",
+                    value=str(asset_template) if asset_template else None,
+                    interactive=bool(asset_template),
+                )
+                gr.DownloadButton(
+                    "下载图表注/表注模板",
                     value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None,
                     interactive=ANNOTATION_TEMPLATE.exists(),
+                )
+                gr.DownloadButton(
+                    "下载公式合集模板",
+                    value=str(FORMULA_TEMPLATE) if FORMULA_TEMPLATE.exists() else None,
+                    interactive=FORMULA_TEMPLATE.exists(),
                 )
             with gr.Accordion("格式与文献材料", open=True, elem_classes=["advanced"]):
                 target_guide = gr.File(label="上传格式要求或官方模板（可选）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"])
@@ -886,7 +912,12 @@ if __name__ == "__main__":
     build_demo().launch(
         css=APP_CSS,
         js=REVIEW_BRIDGE_JS,
-        allowed_paths=[str(OUTPUT_DIR.resolve()), str(REVIEWER_PAGE.resolve()), str(ANNOTATION_TEMPLATE.resolve())],
+        allowed_paths=[
+            str(OUTPUT_DIR.resolve()),
+            str(REVIEWER_PAGE.resolve()),
+            str(ANNOTATION_TEMPLATE.resolve()),
+            str(FORMULA_TEMPLATE.resolve()),
+        ],
         server_name="127.0.0.1",
         server_port=7861,
     )
