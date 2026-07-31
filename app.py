@@ -10,6 +10,7 @@ from pathlib import Path
 import gradio as gr
 
 from paperformat_agent.analyzer import analyze
+from paperformat_agent.agent_orchestrator import PaperDeliveryAgent
 from paperformat_agent.annotations import load_annotations
 from paperformat_agent.asset_manifest import build_asset_manifest, write_asset_manifest
 from paperformat_agent.bibliography import add_bibliography_to_project, apply_bibliography, apply_numeric_markers, remove_embedded_reference_list
@@ -239,6 +240,10 @@ body { background: var(--canvas) !important; }
 .review-empty { padding: 18px; border: 1px dashed #a9c3b9; border-radius: 7px; color: var(--muted); background: #f8fbf9; }
 #results, #stage-review { margin-top: 26px; border-top: 2px solid var(--navy); padding-top: 20px; }
 #stage-review > .markdown h2 { font-size: 22px !important; color: var(--ink) !important; }
+.agent-trace { margin: 14px 0 18px; padding: 16px 18px; border: 1px solid #9fd4c3; border-left: 4px solid var(--mint); border-radius: 7px; background: #f6fbf8; color: #1d3f36; }
+.agent-trace h3 { margin: 0 0 10px !important; font-size: 16px !important; color: var(--navy) !important; }
+.agent-trace ul { margin: 8px 0 0; padding-left: 20px; }
+.agent-trace li { margin: 6px 0; font-size: 13px; line-height: 1.5; }
 button.secondary { border-radius: 7px !important; border-color: #b7cbc3 !important; color: #235348 !important; }
 footer { display: none !important; }
 @media (max-width: 720px) {
@@ -451,6 +456,7 @@ def run_agent(
     source = _source_path(uploaded_file, local_path)
     destination_root = _output_root(output_path)
     run_dir = Path(tempfile.mkdtemp(prefix="paperformat_", dir=destination_root))
+    agent = PaperDeliveryAgent(run_dir, source.name, target_name.strip())
 
     rules = apply_journal_profile(_base_rules(rule_file), _profile_id(journal_profile))
     rules, guideline_changes = apply_guideline_overrides(rules, target_guide)
@@ -468,9 +474,12 @@ def run_agent(
         project = prepare_project(source, run_dir, rules)
         original_text, _ = read_text_best_effort(project.main_tex_path)
     except ValueError as exc:
+        agent.block_step("intake", str(exc))
         raise gr.Error(str(exc)) from exc
+    agent.complete_step("intake", f"Parsed {project.source_kind} source into an isolated LaTeX workspace.", [str(project.main_tex_path.relative_to(run_dir))])
 
     rules = rules_for_source_kind(rules, project.source_kind)
+    agent.complete_step("rules", f"Resolved rule profile '{rules['name']}' with {len(guideline_changes + text_requirement_changes + reference_changes)} supplemental evidence item(s).")
 
     try:
         bibliography_name = add_bibliography_to_project(project.project_dir, bibliography_file)
@@ -484,6 +493,7 @@ def run_agent(
     if citation_mapping:
         repaired_text = remove_embedded_reference_list(repaired_text, actions)
     repaired_text = apply_bibliography(repaired_text, bibliography_name, rules, actions)
+    agent.complete_step("repair", f"Analyzed {len(analysis_before.issues)} issue(s) and applied {len(actions)} reversible formatting repair(s).")
     asset_summary: list[str] = []
     delivery_blockers: list[str] = list(project.source_notes)
     try:
@@ -530,10 +540,12 @@ def run_agent(
         mapping_report.write_text("\n".join(mapping_lines) + "\n", encoding="utf-8")
         shutil.copy2(mapping_report, project.project_dir / mapping_report.name)
         actions.append(RepairAction("placeholder_asset_mapping", f"Applied {len(matched)} exact placeholder asset matches."))
+        agent.complete_step("assets", f"Matched {len(matched)} asset(s); {len(missing) + len(duplicate) + len(annotations.warnings)} item(s) need confirmation.", missing + duplicate + annotations.warnings)
     else:
         unresolved_markers = [marker for marker, _ in find_placeholders(repaired_text)]
         if unresolved_markers:
             delivery_blockers.append("Unresolved manuscript placeholders: " + ", ".join(unresolved_markers))
+        agent.complete_step("assets", "Scanned manuscript placeholders without an uploaded asset bundle.", unresolved_markers)
     analysis_after = analyze(repaired_text, rules)
     risk_before, risk_after = assess_risk(analysis_before), assess_risk(analysis_after)
 
@@ -550,8 +562,6 @@ def run_agent(
             citation_lines.extend(["", "## Unresolved markers", "", *[f"- [{number}] has no matching entry in the uploaded library." for number in unresolved_citations]])
         citation_report_path.write_text("\n".join(citation_lines) + "\n", encoding="utf-8")
         shutil.copy2(citation_report_path, project.project_dir / citation_report_path.name)
-    project_zip = package_project(project.project_dir, run_dir / "latex_source.zip")
-
     compile_status, compile_note, pdf_path = "未编译", None, None
     compile_log_path = run_dir / "compile.log"
     if compile_pdf:
@@ -559,6 +569,7 @@ def run_agent(
             compile_status = "原始 PDF 保真预览"
             pdf_path = str(source)
             compile_note = "检测到 PDF 中的公式或未结构化表格。为避免错误重排，预览保留原始 PDF；正式交付已阻止，请上传 DOCX、原始 LaTeX 或表格数据文件。"
+            agent.complete_step("verify", "Preserved the original PDF because conversion risks were detected.", project.source_notes)
         else:
             ok, compile_output = compile_tex(project.main_tex_path, run_dir)
             preview_used = "Preview fallback:" in compile_output
@@ -570,6 +581,14 @@ def run_agent(
                 compile_note = "期刊正式模板未在本地完整通过，当前 PDF 是安全预览版。"
             elif not ok:
                 compile_note = explain_compile_failure(compile_output)
+            if ok:
+                agent.complete_step("verify", f"LaTeX compilation {compile_status}.", [compile_log_path.name])
+            else:
+                agent.block_step("verify", "LaTeX compilation failed.", [compile_log_path.name])
+
+    agent.finish(delivery_blockers, compile_status)
+    shutil.copy2(agent.persist(), project.project_dir / agent.trace_path.name)
+    package_project(project.project_dir, run_dir / "latex_source.zip")
 
     report = build_report(analysis_after, actions, rules["name"], risk_after, compile_status=compile_status)
     report_path = run_dir / "format_report.md"
@@ -592,6 +611,7 @@ def run_agent(
             f"- 格式评分：`{risk_before.overall_score}/100 -> {risk_after.overall_score}/100`",
             f"- 自动修复数量：`{len(actions)}`",
             f"- PDF 编译：`{compile_status}`",
+            f"- Agent 决策：`{agent.trace['status']}`",
             f"- 输出目录：`{run_dir}`",
         ]
     )
@@ -604,7 +624,7 @@ def run_agent(
     # The first pass is deliberately preview-only: artifacts remain in the run directory
     # and are exposed only after the user requests formal delivery.
     pdf_output = gr.update(value=None, visible=False)
-    return summary, None, None, str(report_path), str(compile_log_path) if compile_log_path.exists() else None, pdf_output, None, review_html, str(run_dir)
+    return summary, agent.to_markdown(), None, None, str(report_path), str(compile_log_path) if compile_log_path.exists() else None, pdf_output, None, review_html, str(run_dir)
 
 
 def run_formal_export(run_directory: str):
@@ -630,7 +650,6 @@ def run_formal_export(run_directory: str):
     pdf_path = str(candidate_pdf) if candidate_pdf else None
     docx_path = run_dir / "formatted_manuscript.docx"
     word_ok, word_note = export_docx_from_tex(main_tex, docx_path, run_dir / "project")
-    project_zip = package_project(run_dir / "project", run_dir / "formal_latex_source.zip")
 
     status = "成功" if ok else "失败"
     if ok and "Preview fallback:" in compile_output:
@@ -639,9 +658,15 @@ def run_formal_export(run_directory: str):
     if not ok:
         notes.append(f"- 编译说明：{explain_compile_failure(compile_output)}")
     notes.append(f"- Word 说明：{word_note}")
+    agent = PaperDeliveryAgent.load(run_dir)
+    if agent:
+        agent.mark_formal_export(ok and word_ok, [status, word_note])
+        shutil.copy2(agent.persist(), run_dir / "project" / agent.trace_path.name)
+    project_zip = package_project(run_dir / "project", run_dir / "formal_latex_source.zip")
     summary = "## 正式导出完成\n\n" + "\n".join(notes)
     return (
         summary,
+        agent.to_markdown() if agent else "### Agent 执行轨迹\n\n未找到本轮任务轨迹。",
         gr.update(value=str(source_tex), visible=True),
         gr.update(value=str(project_zip), visible=True),
         str(log_path),
@@ -870,6 +895,7 @@ def build_demo() -> gr.Blocks:
         with gr.Group(elem_id="stage-review", elem_classes=["results"]):
             gr.Markdown("## 输出结果")
             summary = gr.Markdown()
+            agent_trace = gr.Markdown(elem_classes=["agent-trace"])
             with gr.Row():
                 report_file = gr.File(label="格式检查报告")
                 compile_log = gr.File(label="编译日志")
@@ -903,12 +929,12 @@ def build_demo() -> gr.Blocks:
         run_button.click(
             run_agent,
             inputs=[uploaded, local_path, rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, bibliography_file, initial_asset_bundle, initial_annotation_bundle, formula_bundle, output_path, gr.State(True)],
-            outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, word_file, reviewer, run_state],
+            outputs=[summary, agent_trace, tex_file, project_file, report_file, compile_log, pdf_file, word_file, reviewer, run_state],
         )
         formal_button.click(
             run_formal_export,
             inputs=run_state,
-            outputs=[summary, tex_file, project_file, compile_log, pdf_file, word_file, reviewer],
+            outputs=[summary, agent_trace, tex_file, project_file, compile_log, pdf_file, word_file, reviewer],
         )
         uploaded.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
         local_path.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
