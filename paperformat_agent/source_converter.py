@@ -80,6 +80,8 @@ def _pdf_page_blocks(raw_text: str) -> list[tuple[str, object]]:
         lowered = line.lower()
         if any(marker in lowered for marker in boilerplate) or re.fullmatch(r"\d+", line):
             continue
+        if _caption_kind_and_text(line):
+            continue
         inline_heading = re.match(r"^(\d+(?:\.\d+)*)\s*\.\s*(introduction|background|methods?|methodology|materials? and methods?|results?(?: and discussion)?|discussion|conclusions?|references|acknowledg(?:e)?ments?|appendix)\s+(.+)$", line, re.IGNORECASE)
         if inline_heading:
             if paragraph_lines:
@@ -155,16 +157,20 @@ def _extract_formula_crops(layout_pages, assets_dir: Path) -> dict[int, list[Pat
 
 
 def _caption_kind_and_text(text: str) -> tuple[str, str] | None:
-    match = re.match(r"^(figure|fig\.?|图|table|表)\s*\d*\s*[:：.\-]?\s*(.+)$", text, re.IGNORECASE)
+    match = re.match(
+        r"^\s*(figure|fig\.?|图|table|表)\s*(\d+(?:[.-]\d+)*)\s*[：:.、\-]?\s*(.+?)\s*$",
+        text,
+        re.IGNORECASE,
+    )
     if not match:
         return None
     kind = "figure" if match.group(1).lower() in {"figure", "fig.", "fig", "图"} else "table"
-    return kind, match.group(2).strip()
+    return kind, match.group(3).strip()
 
 
 def _caption_text(value: str, fallback: str) -> str:
-    cleaned = re.sub(r"^(?:figure|fig\.?|table|\u56fe|\u8868)\s*\d*\s*[:\uff1a.\-]?\s*", "", value, flags=re.IGNORECASE).strip()
-    return cleaned or fallback
+    parsed = _caption_kind_and_text(value)
+    return parsed[1] if parsed else value.strip() or fallback
 
 
 def _copy_docx_images(source: Path, assets_dir: Path) -> list[Path]:
@@ -226,12 +232,19 @@ def load_markdown(source: Path, assets_dir: Path) -> SourceDocument:
     blocks: list[tuple[str, object]] = []
     image_pattern = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
     images: list[Path] = []
+    figure_captions: list[str] = []
+    table_captions: list[str] = []
     raw_lines = text.splitlines()
     index = 0
     while index < len(raw_lines):
         raw = raw_lines[index]
         line = raw.strip()
         if not line:
+            index += 1
+            continue
+        caption = _caption_kind_and_text(line)
+        if caption:
+            (figure_captions if caption[0] == "figure" else table_captions).append(caption[1])
             index += 1
             continue
         image_match = image_pattern.fullmatch(line)
@@ -267,7 +280,13 @@ def load_markdown(source: Path, assets_dir: Path) -> SourceDocument:
         elif not re.match(r"^[-*+]\s+", line):
             blocks.append(("paragraph", line))
         index += 1
-    return SourceDocument(title=title, blocks=blocks, images=images)
+    return SourceDocument(
+        title=title,
+        blocks=blocks,
+        images=images,
+        figure_captions=figure_captions,
+        table_captions=table_captions,
+    )
 
 
 def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
@@ -278,6 +297,8 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
     page_texts: list[str] = []
     images: list[Path] = []
     page_images: dict[int, list[Path]] = {}
+    figure_captions: list[str] = []
+    table_captions: list[str] = []
     assets_dir.mkdir(parents=True, exist_ok=True)
     with pdfplumber.open(source) as layout_pdf:
         layout_texts = [_column_ordered_page_text(page) for page in layout_pdf.pages]
@@ -285,6 +306,10 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
     for page_number, page in enumerate(reader.pages, start=1):
         raw_content = page.extract_text() or ""
         page_texts.append(raw_content if page_number == 1 else layout_texts[page_number - 1])
+        for line in page_texts[-1].splitlines():
+            caption = _caption_kind_and_text(_clean_text(line))
+            if caption:
+                (figure_captions if caption[0] == "figure" else table_captions).append(caption[1])
         for image_number, image in enumerate(page.images, start=1):
             suffix = Path(image.name).suffix or ".png"
             destination = assets_dir / f"page-{page_number}-image-{image_number}{suffix}"
@@ -323,7 +348,16 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
     notes = []
     if not blocks:
         notes.append("PDF contains no extractable text. It may be a scan and requires OCR before reliable conversion.")
-    return SourceDocument(title=title, blocks=blocks, abstract_text=abstract_text, keywords_text=keywords_text, images=images, notes=notes)
+    return SourceDocument(
+        title=title,
+        blocks=blocks,
+        abstract_text=abstract_text,
+        keywords_text=keywords_text,
+        images=images,
+        figure_captions=figure_captions,
+        table_captions=table_captions,
+        notes=notes,
+    )
 
 
 def load_source(source: Path, assets_dir: Path) -> SourceDocument:
@@ -357,6 +391,7 @@ def render_latex(document: SourceDocument, rules: dict) -> str:
     if not rules.get("class_managed_layout"):
         lines.insert(1, r"\usepackage[" + geometry + r"]{geometry}")
     table_number = 0
+    figure_number = 0
     embedded_figures = False
     for kind, payload in document.blocks:
         if kind == "heading":
@@ -382,10 +417,12 @@ def render_latex(document: SourceDocument, rules: dict) -> str:
         elif kind == "figure":
             image = payload
             embedded_figures = True
-            caption = "Preserved formula" if "-formula-" in image.name else "Imported figure"
+            figure_number += 1
+            fallback = "Preserved formula" if "-formula-" in image.name else "Imported figure"
+            caption = document.figure_captions[figure_number - 1] if figure_number <= len(document.figure_captions) else fallback
             lines.extend([
                 r"\begin{figure}[H]", r"\centering", rf"\includegraphics[width=0.85\linewidth]{{assets/{image.name}}}",
-                rf"\caption{{{caption}}}", r"\end{figure}",
+                rf"\caption{{{_escape_latex(_caption_text(caption, fallback))}}}", r"\end{figure}",
             ])
     for image_number, image in enumerate([] if embedded_figures else document.images, start=1):
         caption = document.figure_captions[image_number - 1] if image_number <= len(document.figure_captions) else "Imported figure"

@@ -85,17 +85,6 @@ REVIEW_BRIDGE_JS = """
     });
     pages[0].append(input);
     pages[1].append(rules, assets);
-    const reviewAccordions = Array.from(review.querySelectorAll(':scope > .accordion'));
-    reviewAccordions.slice(1, 3).forEach((tool, index) => {
-      const batch = index === 1;
-      tool.classList.add(batch ? 'batch-tools' : 'insert-tools');
-      const guide = document.createElement('div');
-      guide.className = `action-guide${batch ? ' batch-guide' : ''}`;
-      guide.innerHTML = batch
-        ? '<strong>批量替换提醒：</strong>正文中先写 [Fig1]、[图1]、[Table1] 或 [表1]，再上传 ZIP 素材包。请先在第 1 页生成预览，随后回到这里执行替换。'
-        : '<strong>插入提醒：</strong>先在第 1 页生成预览；再选择公式、图片、表格或超链接，填写目标章节或 PDF 锚点，最后点击“插入并重新编译”。';
-      tool.prepend(guide);
-    });
     pages[2].append(review, exportStage);
     return true;
   };
@@ -827,78 +816,7 @@ def build_demo() -> gr.Blocks:
             run_state = gr.State()
             run_button.value = "生成快速预览"
             with gr.Accordion("在线 PDF 审阅与选区锚点", open=True, elem_classes=["advanced"]):
-                gr.Markdown("在 PDF 中选中文字，选区会自动写入下方锚点；之后可插入公式、图、表或超链接。")
                 reviewer = gr.HTML(value=_reviewer_html(None))
-                review_anchor = gr.Textbox(label="审阅选区锚点", placeholder="从 PDF 选中文字后会自动填入", elem_id="review_anchor")
-
-            with gr.Accordion("混合重排：插入公式、图表、表格和超链接", open=False, elem_classes=["advanced"]):
-                with gr.Row():
-                    insert_kind = gr.Dropdown(label="内容类型", choices=["Formula", "Figure", "Table", "Hyperlink"], value="Formula")
-                    insert_section = gr.Textbox(label="目标章节", placeholder="例如：Methods")
-                    insert_placement = gr.Dropdown(label="插入位置", choices=["Section start", "Section end", "Before anchor", "After anchor"], value="Section end")
-                insert_anchor = gr.Textbox(label="锚点文字（可选）", placeholder="从预览里复制附近一句文字，系统会在其前后插入")
-                insert_content = gr.Textbox(label="公式内容 / 表格内容 / 超链接显示文字", lines=5)
-                with gr.Row():
-                    insert_upload = gr.File(label="上传图片或表格文件", type="filepath", file_types=["image", ".xlsx", ".xls", ".csv", ".tsv"])
-                    insert_caption = gr.Textbox(label="图注或表注")
-                    insert_link = gr.Textbox(label="超链接地址")
-                with gr.Row():
-                    insert_style_mode = gr.Dropdown(label="插入规则来源", choices=[STYLE_CURRENT, STYLE_JOURNAL, STYLE_RULE, STYLE_CUSTOM], value=STYLE_CURRENT)
-                    insert_style_journal = gr.Dropdown(label="单独指定期刊规则包", choices=profile_choices_ui, value=RULE_NONE)
-                    insert_style_rule = gr.Dropdown(label="单独指定基础规则", choices=rule_choices, value=RULE_NONE)
-                with gr.Row():
-                    custom_figure_width = gr.Textbox(label="自定图片宽度（仅完全自定时生效）", placeholder="例如：0.72\\linewidth")
-                    custom_figure_prefix = gr.Textbox(label="自定图注前缀", placeholder="例如：Figure / 图")
-                    custom_table_prefix = gr.Textbox(label="自定表注前缀", placeholder="例如：Table / 表")
-                insert_button = gr.Button("插入并重新编译", elem_id="match")
-                insert_summary = gr.Markdown()
-                with gr.Row():
-                    inserted_source = gr.File(label="更新后的 LaTeX 源码")
-                    inserted_package = gr.File(label="更新后的源码包")
-                    inserted_pdf = gr.File(label="更新后的 PDF", visible=False)
-
-            with gr.Accordion("占位符批量插图/插表", open=False, elem_classes=["advanced"]):
-                gr.Markdown("正文里可直接写 `[Fig1]`、`[图1]`、`[Table1]`、`[表1]`。上传 ZIP 压缩包后，系统会按文件名自动匹配并替换。")
-                placeholder_bundle = gr.File(label="上传素材压缩包（ZIP）", type="filepath", file_types=[".zip"])
-                with gr.Row():
-                    gr.DownloadButton(
-                        "下载图表注/表注填写模板",
-                        value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None,
-                        interactive=ANNOTATION_TEMPLATE.exists(),
-                    )
-                    annotation_bundle = gr.File(
-                        label="上传已填写图表注模板（annotations.xlsx 或 annotations.zip，可选）",
-                        type="filepath",
-                        file_types=[".xlsx", ".zip"],
-                    )
-                with gr.Row():
-                    placeholder_style_mode = gr.Dropdown(label="批量插入规则来源", choices=[STYLE_CURRENT, STYLE_JOURNAL, STYLE_RULE, STYLE_CUSTOM], value=STYLE_CURRENT)
-                    placeholder_style_journal = gr.Dropdown(label="单独指定期刊规则包", choices=profile_choices_ui, value=RULE_NONE)
-                    placeholder_style_rule = gr.Dropdown(label="单独指定基础规则", choices=rule_choices, value=RULE_NONE)
-                with gr.Row():
-                    placeholder_custom_width = gr.Textbox(label="自定图片宽度", placeholder="例如：0.7\\linewidth")
-                    placeholder_custom_figure_prefix = gr.Textbox(label="自定图注前缀", placeholder="例如：Figure / 图")
-                    placeholder_custom_table_prefix = gr.Textbox(label="自定表注前缀", placeholder="例如：Table / 表")
-                with gr.Row():
-                    figure_captions = gr.Textbox(label="图注批量填写", lines=4, placeholder="例如：\nFig1: 系统框架图\n图2: 实验流程图")
-                    table_captions = gr.Textbox(label="表注批量填写", lines=4, placeholder="例如：\nTable1: 数据集统计\n表2: 消融实验结果")
-                placeholder_button = gr.Button("批量替换占位符并重新编译", elem_id="match")
-                placeholder_summary = gr.Markdown()
-                with gr.Row():
-                    placeholder_source = gr.File(label="批量替换后的 LaTeX 源码")
-                    placeholder_package = gr.File(label="批量替换后的源码包")
-                    placeholder_pdf = gr.File(label="批量替换后的 PDF", visible=False)
-
-            with gr.Accordion("在线反馈与二次修订", open=False, elem_classes=["advanced"]):
-                feedback_text = gr.Textbox(label="问题说明或导师意见", lines=5, placeholder="例如：Table 1 重复显示，删除图表标题里多余的冒号。")
-                feedback_images = gr.File(label="问题截图（可多选）", type="filepath", file_count="multiple", file_types=["image"])
-                feedback_button = gr.Button("应用反馈并生成修订版", elem_id="match")
-                feedback_summary = gr.Markdown()
-                with gr.Row():
-                    revised_tex = gr.File(label="修订后的 LaTeX 主文件")
-                    revised_project = gr.File(label="修订后的源码包")
-                    revised_pdf = gr.File(label="修订后的 PDF", visible=False)
-                revised_report = gr.File(label="反馈修订报告")
 
             with gr.Group(elem_id="stage-export", elem_classes=["panel", "final-delivery"]):
                 gr.Markdown("### 最终交付")
@@ -924,21 +842,6 @@ def build_demo() -> gr.Blocks:
         uploaded.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
         local_path.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
         match_button.click(match_journal, inputs=target_name, outputs=[journal_profile, journal_match])
-        insert_button.click(
-            run_hybrid_insert,
-            inputs=[run_state, insert_kind, insert_content, insert_upload, insert_caption, insert_link, insert_section, insert_placement, review_anchor, insert_style_mode, insert_style_journal, insert_style_rule, custom_figure_width, custom_figure_prefix, custom_table_prefix],
-            outputs=[insert_summary, inserted_source, inserted_package, inserted_pdf],
-        )
-        placeholder_button.click(
-            run_placeholder_insert,
-            inputs=[run_state, placeholder_bundle, annotation_bundle, figure_captions, table_captions, placeholder_style_mode, placeholder_style_journal, placeholder_style_rule, placeholder_custom_width, placeholder_custom_figure_prefix, placeholder_custom_table_prefix],
-            outputs=[placeholder_summary, placeholder_source, placeholder_package, placeholder_pdf],
-        )
-        feedback_button.click(
-            run_feedback,
-            inputs=[run_state, feedback_text, feedback_images, gr.State(True)],
-            outputs=[feedback_summary, revised_tex, revised_project, revised_report, revised_pdf],
-        )
         rule_file.change(_rule_summary, inputs=rule_file, outputs=rule_summary)
     return demo
 
