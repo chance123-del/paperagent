@@ -14,6 +14,7 @@ from paperformat_agent.annotations import load_annotations
 from paperformat_agent.asset_manifest import build_asset_manifest, write_asset_manifest
 from paperformat_agent.bibliography import add_bibliography_to_project, apply_bibliography, apply_numeric_markers, remove_embedded_reference_list
 from paperformat_agent.feedback import apply_text_feedback, save_feedback_evidence
+from paperformat_agent.formulas import apply_formulas, load_formulas, write_formula_manifest
 from paperformat_agent.exporter import export_docx_from_tex
 from paperformat_agent.guidelines import apply_guideline_overrides, apply_requirement_text
 from paperformat_agent.hybrid_insert import build_block, insert_block
@@ -420,6 +421,7 @@ def run_agent(
     bibliography_file: str | None,
     initial_asset_bundle: str | None,
     initial_annotation_bundle: str | None,
+    formula_bundle: str | None,
     output_path: str,
     compile_pdf: bool,
 ):
@@ -462,6 +464,16 @@ def run_agent(
     repaired_text = apply_bibliography(repaired_text, bibliography_name, rules, actions)
     asset_summary: list[str] = []
     delivery_blockers: list[str] = list(project.source_notes)
+    try:
+        formulas = load_formulas(formula_bundle, run_dir)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise gr.Error(str(exc)) from exc
+    repaired_text, matched_formulas, missing_formulas = apply_formulas(repaired_text, formulas)
+    write_formula_manifest(formulas, project.project_dir)
+    delivery_blockers.extend(formulas.warnings)
+    delivery_blockers.extend(missing_formulas)
+    if matched_formulas:
+        actions.append(RepairAction("formula_mapping", f"Inserted {len(matched_formulas)} confirmed formula mappings."))
     if initial_asset_bundle:
         try:
             bundle_dir = unpack_bundle(initial_asset_bundle, run_dir)
@@ -785,6 +797,7 @@ def build_demo() -> gr.Blocks:
             with gr.Row():
                 initial_asset_bundle = gr.File(label="图表素材压缩包（ZIP，可选）", type="filepath", file_types=[".zip"])
                 initial_annotation_bundle = gr.File(label="图表注/表注模板（XLSX 或 ZIP，可选）", type="filepath", file_types=[".xlsx", ".zip"])
+                formula_bundle = gr.File(label="公式合集（ZIP 或 formulas.json，可选）", type="filepath", file_types=[".zip", ".json"])
                 gr.DownloadButton(
                     "下载图表注模板",
                     value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None,
@@ -848,7 +861,7 @@ def build_demo() -> gr.Blocks:
 
         run_button.click(
             run_agent,
-            inputs=[uploaded, local_path, rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, bibliography_file, initial_asset_bundle, initial_annotation_bundle, output_path, gr.State(True)],
+            inputs=[uploaded, local_path, rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, bibliography_file, initial_asset_bundle, initial_annotation_bundle, formula_bundle, output_path, gr.State(True)],
             outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, word_file, reviewer, run_state],
         )
         formal_button.click(

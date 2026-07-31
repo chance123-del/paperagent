@@ -36,6 +36,12 @@ python app.py
 
 ## 命令行
 
+## 公式合集
+
+在 DOCX 或 Markdown 正文中写入 `[Eq1]` 或 `[公式1]` 作为公式位置标记，再上传含 `formulas.json` 的 ZIP（或直接上传该 JSON）。每个条目提供经确认的 LaTeX 与可选 `tag`；`tag: "1"` 会生成右侧编号 `(1)`。可将对应的手写图片一同放入 ZIP 留作原始凭证，但没有确认的 LaTeX 时系统会阻止正式交付，不会猜写公式。
+
+示例见 `samples/formulas.example.json`。
+
 ```powershell
 python -m paperformat_agent.cli repair `
   --input .\my-paper.docx `
