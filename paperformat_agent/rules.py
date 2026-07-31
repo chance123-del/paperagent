@@ -70,42 +70,43 @@ def summarize_rules(rules: dict) -> str:
     separators = rules.get("caption_separators", {})
     required = rules.get("required_elements", {})
 
+    enabled = lambda value: "是" if value else "否"
     lines = [
-        f"## {rules.get('name', 'rule_profile')}",
+        f"## 规则包：`{rules.get('name', 'rule_profile')}`",
         "",
-        rules.get("description", "No description."),
+        f"说明：{rules.get('description', '未提供说明。')}",
         "",
-        "### Checks",
+        "### 当前核验项",
         "",
-        f"- Geometry: `{rules.get('geometry', 'not set')}`",
-        f"- Line spread: `{rules.get('line_spread', 'not set')}`",
-        f"- Bibliography style: `{rules.get('bibliographystyle', 'not set')}`",
-        f"- Abstract required: `{bool(abstract_rules.get('required'))}`",
-        f"- Keywords required: `{bool(keyword_rules.get('required'))}`",
-        f"- Bibliography required: `{bool(required.get('bibliography'))}`",
+        f"- 页面尺寸与页边距：`{rules.get('geometry', '未设置')}`",
+        f"- 行距倍数：`{rules.get('line_spread', '未设置')}`",
+        f"- 参考文献样式：`{rules.get('bibliographystyle', '未设置')}`",
+        f"- 是否要求摘要：`{enabled(abstract_rules.get('required'))}`",
+        f"- 是否要求关键词：`{enabled(keyword_rules.get('required'))}`",
+        f"- 是否要求参考文献：`{enabled(required.get('bibliography'))}`",
     ]
 
     if caption_rules:
         lines.extend(
             [
-                f"- Figure caption format: `{caption_rules.get('figure', 'not set')}{separators.get('figure', ': ')}`",
-                f"- Table caption format: `{caption_rules.get('table', 'not set')}{separators.get('table', ': ')}`",
+                f"- 图注前缀格式：`{caption_rules.get('figure', '未设置')}{separators.get('figure', ': ')}`",
+                f"- 表注前缀格式：`{caption_rules.get('table', '未设置')}{separators.get('table', ': ')}`",
             ]
         )
 
     lines.extend(
         [
             "",
-            "### Auto Repair",
+            "### 自动修复策略",
             "",
-            f"- Insert abstract template: `{bool(abstract_rules.get('auto_insert'))}`",
-            f"- Insert keyword template: `{bool(keyword_rules.get('auto_insert'))}`",
-            "- Normalize caption formats and page style settings when mismatched.",
+            f"- 自动补入摘要模板：`{enabled(abstract_rules.get('auto_insert'))}`",
+            f"- 自动补入关键词模板：`{enabled(keyword_rules.get('auto_insert'))}`",
+            "- 图表注格式与页面样式不一致时，仅执行规则性规范化；不改写正文事实、数据或结论。",
         ]
     )
 
     if abstract_rules.get("template"):
-        lines.extend(["", "### Abstract Template", ""])
+        lines.extend(["", "### 摘要模板", ""])
         template = abstract_rules["template"]
         if isinstance(template, list):
             lines.extend([f"- `{line}`" for line in template])
@@ -113,6 +114,6 @@ def summarize_rules(rules: dict) -> str:
             lines.append(f"- `{template}`")
 
     if keyword_rules.get("template"):
-        lines.extend(["", "### Keyword Template", "", f"- `{keyword_rules['template']}`"])
+        lines.extend(["", "### 关键词模板", "", f"- `{keyword_rules['template']}`"])
 
     return "\n".join(lines)

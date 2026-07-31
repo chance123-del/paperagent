@@ -816,7 +816,7 @@ def build_demo() -> gr.Blocks:
               <h3>项目材料包</h3>
               <p>所有内容均以您上传的原件、模板和规则为准。<span class="required"> 系统不会猜写题注、DOI、链接、参考文献或公式。</span></p>
               <div class="project-rules">
-                <div class="project-rule"><strong>正文引用</strong>上传 <code>.bib</code> 后，正文使用 <code>[1]</code>、<code>[1,3-4]</code>；按 BibTeX 原始顺序映射。LaTeX 原稿保留 <code>\cite{key}</code>。</div>
+                <div class="project-rule"><strong>正文引用</strong>上传 <code>.bib</code> 后，正文使用 <code>[1]</code>、<code>[1,3-4]</code>；按 BibTeX 原始顺序映射。LaTeX 原稿保留 <code>\\cite{key}</code>。</div>
                 <div class="project-rule"><strong>图表与图表注</strong>正文使用 <code>[Fig1]</code>/<code>[图1]</code>、<code>[Table1]</code>/<code>[表1]</code>；素材文件按 <code>Fig1.png</code>、<code>Table1.xlsx</code> 精确匹配。</div>
                 <div class="project-rule"><strong>超链接</strong>在图表注模板的 <code>Links</code> 表填写 <code>asset_id</code>、DOI/URL 与显示文字；中文显示文字可直接使用。</div>
                 <div class="project-rule"><strong>公式与匹配</strong>正文使用 <code>[Eq1]</code>/<code>[公式1]</code>；公式模板的 <code>formula_id</code> 必须一致，<code>tag</code> 生成右侧编号。缺失、重复或无法确认时阻止正式导出。</div>
