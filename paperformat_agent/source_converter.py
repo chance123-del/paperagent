@@ -179,6 +179,20 @@ def _caption_text(value: str, fallback: str) -> str:
     return parsed[1] if parsed else value.strip() or fallback
 
 
+def pdf_table_extraction_warnings(page_text: str) -> list[str]:
+    """Flag table-like PDF text that has lost its row/column structure."""
+    warnings: list[str] = []
+    spaced_table = r"(?:table|t\s*a\s*b\s*l\s*e|表)\s*\d+(?:[.-]\d+)?"
+    headers = r"(?:subjects?|age|males?|females?|training|受试者|年龄|男性|女性|训练)"
+    for line in page_text.splitlines():
+        normalized = _clean_text(line)
+        if re.search(spaced_table, normalized, re.IGNORECASE) and re.search(headers, normalized, re.IGNORECASE):
+            warning = "A PDF table was detected but its row/column structure could not be reconstructed; provide DOCX, XLSX, CSV, or a table asset before formal delivery."
+            if warning not in warnings:
+                warnings.append(warning)
+    return warnings
+
+
 def _copy_docx_images(source: Path, assets_dir: Path) -> list[Path]:
     assets_dir.mkdir(parents=True, exist_ok=True)
     images: list[Path] = []
@@ -349,9 +363,9 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
             page_introduction = re.search(r"(?im)^\s*1\s*\.\s*introduction\s*$", page_text)
             page_text = page_text[page_introduction.start():] if page_introduction else ""
         blocks.extend(_pdf_page_blocks(page_text))
+        notes.extend(pdf_table_extraction_warnings(page_text))
         if page_number > 1:
             blocks.extend(("figure", image) for image in page_images.get(page_number, []))
-    notes = []
     if not blocks:
         notes.append("PDF contains no extractable text. It may be a scan and requires OCR before reliable conversion.")
     return SourceDocument(

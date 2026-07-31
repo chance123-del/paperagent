@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from paperformat_agent.source_converter import _caption_kind_and_text, load_markdown, render_latex
+from paperformat_agent.source_converter import _caption_kind_and_text, load_markdown, pdf_table_extraction_warnings, render_latex
 
 
 class SourceCaptionTests(unittest.TestCase):
@@ -28,6 +28,12 @@ class SourceCaptionTests(unittest.TestCase):
             self.assertIn(r"\caption{系统框架}", latex)
             self.assertIn(r"\caption{数据集统计}", latex)
             self.assertNotIn("图 1：系统框架", latex)
+
+    def test_warns_when_a_pdf_table_has_lost_its_structure(self) -> None:
+        warning = pdf_table_extraction_warnings("T a b l e 1 Clinical data Subjects Age (years) Training set")
+
+        self.assertEqual(len(warning), 1)
+        self.assertIn("could not be reconstructed", warning[0])
 
 
 if __name__ == "__main__":

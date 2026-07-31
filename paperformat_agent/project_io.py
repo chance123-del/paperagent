@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
 import zipfile
@@ -19,6 +19,7 @@ class PreparedProject:
     project_dir: Path
     main_tex_path: Path
     main_tex_encoding: str
+    source_notes: list[str] = field(default_factory=list)
 
 
 def _copy_directory_contents(source_dir: Path, target_dir: Path) -> None:
@@ -103,7 +104,7 @@ def prepare_project(input_path: str | Path, workspace_dir: str | Path, rules: di
         from .text_io import write_text_with_encoding
 
         write_text_with_encoding(main_tex, render_latex(document, rules or {}))
-        return PreparedProject(source_path.name, suffix.removeprefix("."), project_dir, main_tex, "utf-8")
+        return PreparedProject(source_path.name, suffix.removeprefix("."), project_dir, main_tex, "utf-8", document.notes)
 
     raise ValueError("Unsupported input. Upload a .docx, .pdf, .md, .tex, or .zip LaTeX project.")
 

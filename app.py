@@ -461,7 +461,7 @@ def run_agent(
         repaired_text = remove_embedded_reference_list(repaired_text, actions)
     repaired_text = apply_bibliography(repaired_text, bibliography_name, rules, actions)
     asset_summary: list[str] = []
-    delivery_blockers: list[str] = []
+    delivery_blockers: list[str] = list(project.source_notes)
     if initial_asset_bundle:
         try:
             bundle_dir = unpack_bundle(initial_asset_bundle, run_dir)
@@ -507,7 +507,7 @@ def run_agent(
     source_tex = run_dir / "source.tex"
     write_text_with_encoding(source_tex, repaired_text, project.main_tex_encoding)
     _save_run_config(run_dir, rule_file, journal_profile, target_name, rules)
-    _write_delivery_gate(run_dir, delivery_blockers)
+    _write_delivery_gate(run_dir, delivery_blockers, notices=project.source_notes)
     citation_report_path = run_dir / "citation_mapping.md"
     if bibliography_name:
         citation_lines = ["# Citation Mapping", "", "## Converted numeric markers", ""]
@@ -549,6 +549,7 @@ def run_agent(
             f"- 项目图表包：`{'；'.join(asset_summary) if asset_summary else '未上传'}`",
             f"- 正式交付状态：`{'已阻止，需处理 ' + str(len(delivery_blockers)) + ' 项' if delivery_blockers else '可进入正式导出检查'}`",
             f"- 数字引用映射：`{len(citation_mapping)} 条已转换，{len(unresolved_citations)} 条未匹配`" if bibliography_name else "- 数字引用映射：`未启用（请上传 BibTeX 文献库）`",
+            f"- 源文件待确认项：`{len(project.source_notes)}`",
             f"- 格式评分：`{risk_before.overall_score}/100 -> {risk_after.overall_score}/100`",
             f"- 自动修复数量：`{len(actions)}`",
             f"- PDF 编译：`{compile_status}`",
@@ -818,6 +819,17 @@ def build_demo() -> gr.Blocks:
             with gr.Accordion("在线 PDF 审阅与选区锚点", open=True, elem_classes=["advanced"]):
                 reviewer = gr.HTML(value=_reviewer_html(None))
 
+            with gr.Accordion("反馈与修订", open=False, elem_classes=["advanced"]):
+                feedback_text = gr.Textbox(label="问题说明或确认后的修改内容", lines=4, placeholder="例如：表 1 请使用上传的 Table1.xlsx；或粘贴已确认的替换文字。")
+                feedback_images = gr.File(label="问题截图（可多选）", type="filepath", file_count="multiple", file_types=["image"])
+                feedback_button = gr.Button("保存反馈并生成修订版", elem_id="match")
+                feedback_summary = gr.Markdown()
+                with gr.Row():
+                    revised_tex = gr.File(label="修订后的 LaTeX 主文件")
+                    revised_project = gr.File(label="修订后的源码包")
+                    revised_pdf = gr.File(label="修订后的 PDF", visible=False)
+                revised_report = gr.File(label="反馈修订报告")
+
             with gr.Group(elem_id="stage-export", elem_classes=["panel", "final-delivery"]):
                 gr.Markdown("### 最终交付")
                 gr.Markdown("确认预览与修订无误后，再生成可提交的正式文件。")
@@ -842,6 +854,11 @@ def build_demo() -> gr.Blocks:
         uploaded.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
         local_path.change(_cancel_for_new_source, outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, run_state], queue=False)
         match_button.click(match_journal, inputs=target_name, outputs=[journal_profile, journal_match])
+        feedback_button.click(
+            run_feedback,
+            inputs=[run_state, feedback_text, feedback_images, gr.State(True)],
+            outputs=[feedback_summary, revised_tex, revised_project, revised_report, revised_pdf],
+        )
         rule_file.change(_rule_summary, inputs=rule_file, outputs=rule_summary)
     return demo
 
