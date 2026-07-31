@@ -191,6 +191,13 @@ body { background: var(--canvas) !important; }
 .project-package h3 { margin: 0 0 5px; color: var(--navy); font-size: 16px; }
 .project-package p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .project-package .required { color: #a44620; font-weight: 700; }
+.project-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 15px; padding-top: 14px; border-top: 1px solid #c9dfd5; }
+.project-rule { min-width: 0; padding: 2px 0 2px 11px; border-left: 3px solid #16856f; color: #314640; font-size: 12px; line-height: 1.55; }
+.project-rule:nth-child(2) { border-left-color: #2e78a6; }
+.project-rule:nth-child(3) { border-left-color: #a46a12; }
+.project-rule:nth-child(4) { border-left-color: #8a4b8e; }
+.project-rule strong { display: block; color: #173832; font-size: 12px; }
+.project-rule code { padding: 1px 3px; border-radius: 3px; background: #dcefe8; color: #075f4c; font-family: Consolas, monospace; font-size: 11px; }
 .workflow-page.active { display: block; }
 .workflow-page > .panel, .workflow-page > .results { margin-bottom: 0; }
 #stage-input, #stage-rules, #stage-review, #stage-export { scroll-margin-top: 16px; }
@@ -241,6 +248,7 @@ footer { display: none !important; }
   .workflow { grid-template-columns: 1fr; }
   .workflow .active { border-top: 0; border-left: 3px solid var(--mint); padding: 15px 18px 15px 15px; }
   .panel { padding: 18px 16px; }
+  .project-rules { grid-template-columns: 1fr; }
   .pdf-reviewer { height: 520px; }
 }
 """
@@ -806,13 +814,22 @@ def build_demo() -> gr.Blocks:
             gr.HTML("""
             <section class="project-package">
               <h3>项目材料包</h3>
-              <p>首次生成即按占位符 <code>[Fig1]</code>、<code>[Table1]</code> 精确匹配资源；图表注、表注和链接只采用您在模板中提供的内容。<span class="required"> 不会自动编写题注、DOI 或参考文献。</span></p>
+              <p>所有内容均以您上传的原件、模板和规则为准。<span class="required"> 系统不会猜写题注、DOI、链接、参考文献或公式。</span></p>
+              <div class="project-rules">
+                <div class="project-rule"><strong>正文引用</strong>上传 <code>.bib</code> 后，正文使用 <code>[1]</code>、<code>[1,3-4]</code>；按 BibTeX 原始顺序映射。LaTeX 原稿保留 <code>\cite{key}</code>。</div>
+                <div class="project-rule"><strong>图表与图表注</strong>正文使用 <code>[Fig1]</code>/<code>[图1]</code>、<code>[Table1]</code>/<code>[表1]</code>；素材文件按 <code>Fig1.png</code>、<code>Table1.xlsx</code> 精确匹配。</div>
+                <div class="project-rule"><strong>超链接</strong>在图表注模板的 <code>Links</code> 表填写 <code>asset_id</code>、DOI/URL 与显示文字；中文显示文字可直接使用。</div>
+                <div class="project-rule"><strong>公式与匹配</strong>正文使用 <code>[Eq1]</code>/<code>[公式1]</code>；公式模板的 <code>formula_id</code> 必须一致，<code>tag</code> 生成右侧编号。缺失、重复或无法确认时阻止正式导出。</div>
+              </div>
             </section>
             """)
             with gr.Row():
                 initial_asset_bundle = gr.File(label="图表素材压缩包（ZIP，可选）", type="filepath", file_types=[".zip"])
                 initial_annotation_bundle = gr.File(label="图表注/表注模板（XLSX 或 ZIP，可选）", type="filepath", file_types=[".xlsx", ".zip"])
                 formula_bundle = gr.File(label="公式合集（ZIP 或 formulas.json，可选）", type="filepath", file_types=[".zip", ".json"])
+            with gr.Row():
+                reference_article = gr.File(label="上传公开参考论文（PDF / Word，可选）", type="filepath", file_types=[".pdf", ".docx"])
+                bibliography_file = gr.File(label="上传个人参考文献库（BibTeX .bib，可选）", type="filepath", file_types=[".bib"])
             with gr.Row():
                 gr.DownloadButton(
                     "下载图表素材包模板",
@@ -831,8 +848,6 @@ def build_demo() -> gr.Blocks:
                 )
             with gr.Accordion("格式与文献材料", open=True, elem_classes=["advanced"]):
                 target_guide = gr.File(label="上传格式要求或官方模板（可选）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"])
-                reference_article = gr.File(label="上传公开参考论文（PDF / Word，可选）", type="filepath", file_types=[".pdf", ".docx"])
-                bibliography_file = gr.File(label="上传个人参考文献库（BibTeX .bib，可选）", type="filepath", file_types=[".bib"])
 
         with gr.Group(elem_id="stage-rules", elem_classes=["panel"]):
             gr.Markdown("### 论文与参考文献规则")
