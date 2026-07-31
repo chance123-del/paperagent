@@ -123,39 +123,42 @@ def load_annotations(upload: str | None, workspace: Path) -> AnnotationData:
     except ImportError as exc:
         raise ValueError("Annotation workbook support requires openpyxl. Install requirements.txt first.") from exc
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
-    missing = REQUIRED_SHEETS - set(workbook.sheetnames)
-    if missing:
-        raise ValueError(f"Annotation workbook is missing sheets: {', '.join(sorted(missing))}.")
-    result = AnnotationData()
-    for sheet_name, kind, target in (("Figures", "figure", result.figures), ("Tables", "table", result.tables)):
-        sheet = workbook[sheet_name]
-        header = {str(cell.value or "").strip() for cell in next(sheet.iter_rows(min_row=1, max_row=1))}
-        if not CAPTION_COLUMNS.issubset(header):
-            raise ValueError(f"{sheet_name} is missing columns: {', '.join(sorted(CAPTION_COLUMNS - header))}.")
-        for row in _row_values(sheet):
-            key = _key(row.get("asset_id", ""))
-            if not re.fullmatch(r"(?:fig|table)\d+", key):
-                result.warnings.append(f"{sheet_name}: invalid asset_id '{row.get('asset_id', '')}'.")
-                continue
-            if (kind == "figure") != key.startswith("fig"):
-                result.warnings.append(f"{sheet_name}: asset_id '{row.get('asset_id', '')}' has the wrong object type.")
-                continue
-            if key in target:
-                result.warnings.append(f"{sheet_name}: duplicate asset_id '{row.get('asset_id', '')}'.")
-                continue
-            caption = _caption(row, key, kind, result.warnings)
-            if caption:
-                target[key] = caption
-    links = workbook["Links"]
-    header = {str(cell.value or "").strip() for cell in next(links.iter_rows(min_row=1, max_row=1))}
-    if not LINK_COLUMNS.issubset(header):
-        raise ValueError(f"Links is missing columns: {', '.join(sorted(LINK_COLUMNS - header))}.")
-    for row in _row_values(links):
-        key, url, text = _key(row.get("asset_id", "")), _normalise_url(row.get("url_or_doi", "")), row.get("link_text", "")
-        if not re.fullmatch(r"(?:fig|table)\d+", key) or not url or not text:
-            result.warnings.append(f"Links: invalid row for asset_id '{row.get('asset_id', '')}'; provide asset_id, DOI/URL, and link_text.")
-        elif key in result.links:
-            result.warnings.append(f"Links: duplicate asset_id '{row.get('asset_id', '')}'.")
-        else:
-            result.links[key] = (url, text)
-    return result
+    try:
+        missing = REQUIRED_SHEETS - set(workbook.sheetnames)
+        if missing:
+            raise ValueError(f"Annotation workbook is missing sheets: {', '.join(sorted(missing))}.")
+        result = AnnotationData()
+        for sheet_name, kind, target in (("Figures", "figure", result.figures), ("Tables", "table", result.tables)):
+            sheet = workbook[sheet_name]
+            header = {str(cell.value or "").strip() for cell in next(sheet.iter_rows(min_row=1, max_row=1))}
+            if not CAPTION_COLUMNS.issubset(header):
+                raise ValueError(f"{sheet_name} is missing columns: {', '.join(sorted(CAPTION_COLUMNS - header))}.")
+            for row in _row_values(sheet):
+                key = _key(row.get("asset_id", ""))
+                if not re.fullmatch(r"(?:fig|table)\d+", key):
+                    result.warnings.append(f"{sheet_name}: invalid asset_id '{row.get('asset_id', '')}'.")
+                    continue
+                if (kind == "figure") != key.startswith("fig"):
+                    result.warnings.append(f"{sheet_name}: asset_id '{row.get('asset_id', '')}' has the wrong object type.")
+                    continue
+                if key in target:
+                    result.warnings.append(f"{sheet_name}: duplicate asset_id '{row.get('asset_id', '')}'.")
+                    continue
+                caption = _caption(row, key, kind, result.warnings)
+                if caption:
+                    target[key] = caption
+        links = workbook["Links"]
+        header = {str(cell.value or "").strip() for cell in next(links.iter_rows(min_row=1, max_row=1))}
+        if not LINK_COLUMNS.issubset(header):
+            raise ValueError(f"Links is missing columns: {', '.join(sorted(LINK_COLUMNS - header))}.")
+        for row in _row_values(links):
+            key, url, text = _key(row.get("asset_id", "")), _normalise_url(row.get("url_or_doi", "")), row.get("link_text", "")
+            if not re.fullmatch(r"(?:fig|table)\d+", key) or not url or not text:
+                result.warnings.append(f"Links: invalid row for asset_id '{row.get('asset_id', '')}'; provide asset_id, DOI/URL, and link_text.")
+            elif key in result.links:
+                result.warnings.append(f"Links: duplicate asset_id '{row.get('asset_id', '')}'.")
+            else:
+                result.links[key] = (url, text)
+        return result
+    finally:
+        workbook.close()
