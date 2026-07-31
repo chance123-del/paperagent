@@ -18,7 +18,7 @@ from paperformat_agent.guidelines import apply_guideline_overrides, apply_requir
 from paperformat_agent.hybrid_insert import build_block, insert_block
 from paperformat_agent.journal_resolver import JOURNAL_PROFILES, apply_journal_profile, profile_choices, resolve_journal
 from paperformat_agent.models import RepairAction
-from paperformat_agent.placeholders import apply_placeholder_assets, parse_caption_lines, unpack_bundle
+from paperformat_agent.placeholders import apply_placeholder_assets, find_placeholders, parse_caption_lines, unpack_bundle
 from paperformat_agent.project_io import find_main_tex, package_project, prepare_project
 from paperformat_agent.reference_style import apply_reference_article_style
 from paperformat_agent.repairer import repair
@@ -38,6 +38,7 @@ STYLE_JOURNAL = "单独指定期刊规则包"
 STYLE_RULE = "单独指定基础格式规则"
 STYLE_CUSTOM = "完全自定插入样式"
 RUN_CONFIG = "run_config.json"
+DELIVERY_GATE = "delivery_gate.json"
 REVIEWER_PAGE = BASE_DIR / "web" / "reviewer.html"
 ANNOTATION_TEMPLATE = BASE_DIR / "outputs" / "annotations_template" / "annotations.xlsx"
 
@@ -325,6 +326,18 @@ def _load_run_config(run_dir: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _write_delivery_gate(run_dir: Path, blockers: list[str], notices: list[str] | None = None) -> None:
+    (run_dir / DELIVERY_GATE).write_text(
+        json.dumps({"blockers": blockers, "notices": notices or []}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _load_delivery_gate(run_dir: Path) -> dict:
+    path = run_dir / DELIVERY_GATE
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"blockers": [], "notices": []}
+
+
 def _resolve_insert_rules(
     run_dir: Path,
     style_mode: str,
@@ -450,6 +463,7 @@ def run_agent(
         repaired_text = remove_embedded_reference_list(repaired_text, actions)
     repaired_text = apply_bibliography(repaired_text, bibliography_name, rules, actions)
     asset_summary: list[str] = []
+    delivery_blockers: list[str] = []
     if initial_asset_bundle:
         try:
             bundle_dir = unpack_bundle(initial_asset_bundle, run_dir)
@@ -471,6 +485,9 @@ def run_agent(
             f"重复或忽略：{len(duplicate)} 个",
             f"图表注模板待确认：{len(annotations.warnings)} 项",
         ]
+        delivery_blockers.extend(missing)
+        delivery_blockers.extend(duplicate)
+        delivery_blockers.extend(annotations.warnings)
         mapping_report = run_dir / "asset_mapping_report.md"
         mapping_lines = ["# Asset Mapping Report", "", "## Matched", ""]
         mapping_lines.extend(f"- {item}" for item in matched) if matched else mapping_lines.append("- No assets matched.")
@@ -480,6 +497,10 @@ def run_agent(
         mapping_report.write_text("\n".join(mapping_lines) + "\n", encoding="utf-8")
         shutil.copy2(mapping_report, project.project_dir / mapping_report.name)
         actions.append(RepairAction("placeholder_asset_mapping", f"Applied {len(matched)} exact placeholder asset matches."))
+    else:
+        unresolved_markers = [marker for marker, _ in find_placeholders(repaired_text)]
+        if unresolved_markers:
+            delivery_blockers.append("Unresolved manuscript placeholders: " + ", ".join(unresolved_markers))
     analysis_after = analyze(repaired_text, rules)
     risk_before, risk_after = assess_risk(analysis_before), assess_risk(analysis_after)
 
@@ -487,6 +508,7 @@ def run_agent(
     source_tex = run_dir / "source.tex"
     write_text_with_encoding(source_tex, repaired_text, project.main_tex_encoding)
     _save_run_config(run_dir, rule_file, journal_profile, target_name, rules)
+    _write_delivery_gate(run_dir, delivery_blockers)
     citation_report_path = run_dir / "citation_mapping.md"
     if bibliography_name:
         citation_lines = ["# Citation Mapping", "", "## Converted numeric markers", ""]
@@ -526,6 +548,7 @@ def run_agent(
             f"- 参考论文风格：`{', '.join(reference_changes) if reference_changes else '未检测到'}`",
             f"- 参考文献：`{bibliography_name + '.bib' if bibliography_name else '未提供'}`",
             f"- 项目图表包：`{'；'.join(asset_summary) if asset_summary else '未上传'}`",
+            f"- 正式交付状态：`{'已阻止，需处理 ' + str(len(delivery_blockers)) + ' 项' if delivery_blockers else '可进入正式导出检查'}`",
             f"- 数字引用映射：`{len(citation_mapping)} 条已转换，{len(unresolved_citations)} 条未匹配`" if bibliography_name else "- 数字引用映射：`未启用（请上传 BibTeX 文献库）`",
             f"- 格式评分：`{risk_before.overall_score}/100 -> {risk_after.overall_score}/100`",
             f"- 自动修复数量：`{len(actions)}`",
@@ -554,6 +577,11 @@ def run_formal_export(run_directory: str):
     main_tex = _main_tex_for_run(run_dir)
     if not source_tex.exists() or not main_tex.exists():
         raise gr.Error("当前预览工程不存在，请重新生成快速预览。")
+    delivery_gate = _load_delivery_gate(run_dir)
+    blockers = delivery_gate.get("blockers", [])
+    if blockers:
+        preview = "；".join(str(item) for item in blockers[:3])
+        raise gr.Error(f"正式导出已阻止：仍有 {len(blockers)} 个待确认项。先完成图表/图表注匹配后再导出。{preview}")
 
     cancel_active_compilations()
     ok, compile_output = compile_tex(main_tex, run_dir)
@@ -694,6 +722,11 @@ def run_placeholder_insert(
     )
     write_text_with_encoding(source_tex, updated)
     write_text_with_encoding(main_tex, updated)
+    delivery_blockers = [*missing, *duplicate, *annotations.warnings]
+    unresolved_markers = [marker for marker, _ in find_placeholders(updated)]
+    if unresolved_markers:
+        delivery_blockers.append("Unresolved manuscript placeholders: " + ", ".join(unresolved_markers))
+    _write_delivery_gate(run_dir, delivery_blockers)
     project_zip = package_project(run_dir / "project", run_dir / "placeholder_revised_source.zip")
     pdf_path, note = _compile_after_update(main_tex, run_dir, "placeholder_compile.log")
 
@@ -708,6 +741,7 @@ def run_placeholder_insert(
         lines.extend(["", "### 图表注模板待确认项", ""] + [f"- {item}" for item in annotations.warnings])
     if note:
         lines.extend(["", f"**编译说明：** {note}"])
+    lines.extend(["", f"- 正式交付状态：`{'已阻止，需处理 ' + str(len(delivery_blockers)) + ' 项' if delivery_blockers else '可进入正式导出检查'}`"])
     return "\n".join(lines), str(source_tex), str(project_zip), gr.update(value=pdf_path, visible=bool(pdf_path))
 
 
