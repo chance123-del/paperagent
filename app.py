@@ -895,7 +895,9 @@ def build_demo() -> gr.Blocks:
         with gr.Group(elem_id="stage-review", elem_classes=["results"]):
             gr.Markdown("## 输出结果")
             summary = gr.Markdown()
-            agent_trace = gr.Markdown(elem_classes=["agent-trace"])
+            with gr.Group(elem_classes=["agent-trace"]):
+                gr.Markdown("### Agent 执行轨迹")
+                agent_trace = gr.Markdown("生成快速预览后，这里会显示任务计划、工具执行结果、风险阻断项和交付决策。")
             with gr.Row():
                 report_file = gr.File(label="格式检查报告")
                 compile_log = gr.File(label="编译日志")
