@@ -319,6 +319,7 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
     page_images: dict[int, list[Path]] = {}
     figure_captions: list[str] = []
     table_captions: list[str] = []
+    notes: list[str] = []
     assets_dir.mkdir(parents=True, exist_ok=True)
     with pdfplumber.open(source) as layout_pdf:
         layout_texts = [_column_ordered_page_text(page) for page in layout_pdf.pages]
@@ -341,6 +342,8 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
                 pass
     for page_number, assets in formula_assets.items():
         page_images.setdefault(page_number, []).extend(assets)
+    if formula_assets:
+        notes.append("PDF contains formula regions. Use the original PDF for preview and provide DOCX or LaTeX for an editable, reflowed manuscript.")
     full_text = "\n".join(page_texts)
     introduction = re.search(r"(?im)^\s*1\s*\.\s*introduction\s*$", full_text)
     front_matter = full_text[:introduction.start()] if introduction else page_texts[0] if page_texts else ""
@@ -437,8 +440,12 @@ def render_latex(document: SourceDocument, rules: dict) -> str:
         elif kind == "figure":
             image = payload
             embedded_figures = True
+            if "-formula-" in image.name:
+                # Formula crops preserve visible math but must not consume figure numbers or captions.
+                lines.extend([r"\begin{center}", rf"\includegraphics[width=0.85\linewidth]{{assets/{image.name}}}", r"\end{center}"])
+                continue
             figure_number += 1
-            fallback = "Preserved formula" if "-formula-" in image.name else "Imported figure"
+            fallback = "Imported figure"
             caption = document.figure_captions[figure_number - 1] if figure_number <= len(document.figure_captions) else fallback
             lines.extend([
                 r"\begin{figure}[H]", r"\centering", rf"\includegraphics[width=0.85\linewidth]{{assets/{image.name}}}",

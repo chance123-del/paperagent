@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from paperformat_agent.source_converter import _caption_kind_and_text, load_markdown, pdf_table_extraction_warnings, render_latex
+from paperformat_agent.source_converter import SourceDocument, _caption_kind_and_text, load_markdown, pdf_table_extraction_warnings, render_latex
 
 
 class SourceCaptionTests(unittest.TestCase):
@@ -34,6 +34,18 @@ class SourceCaptionTests(unittest.TestCase):
 
         self.assertEqual(len(warning), 1)
         self.assertIn("could not be reconstructed", warning[0])
+
+    def test_formula_crop_does_not_consume_a_figure_caption(self) -> None:
+        document = SourceDocument(
+            title="Test",
+            blocks=[("figure", Path("page-1-formula-1.png")), ("figure", Path("page-1-image-1.png"))],
+            figure_captions=["Actual figure caption"],
+        )
+
+        latex = render_latex(document, {})
+
+        self.assertNotIn(r"\caption{Preserved formula}", latex)
+        self.assertEqual(latex.count(r"\caption{Actual figure caption}"), 1)
 
 
 if __name__ == "__main__":

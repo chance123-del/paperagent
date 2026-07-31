@@ -521,16 +521,21 @@ def run_agent(
     compile_status, compile_note, pdf_path = "未编译", None, None
     compile_log_path = run_dir / "compile.log"
     if compile_pdf:
-        ok, compile_output = compile_tex(project.main_tex_path, run_dir)
-        preview_used = "Preview fallback:" in compile_output
-        compile_status = "预览版" if ok and preview_used else "成功" if ok else "失败"
-        write_text_with_encoding(compile_log_path, compile_output)
-        candidate_pdf = _compiled_pdf_for(project.main_tex_path, run_dir)
-        pdf_path = str(candidate_pdf) if candidate_pdf else None
-        if preview_used:
-            compile_note = "期刊正式模板未在本地完整通过，当前 PDF 是安全预览版。"
-        elif not ok:
-            compile_note = explain_compile_failure(compile_output)
+        if project.source_kind == "pdf" and project.source_notes:
+            compile_status = "原始 PDF 保真预览"
+            pdf_path = str(source)
+            compile_note = "检测到 PDF 中的公式或未结构化表格。为避免错误重排，预览保留原始 PDF；正式交付已阻止，请上传 DOCX、原始 LaTeX 或表格数据文件。"
+        else:
+            ok, compile_output = compile_tex(project.main_tex_path, run_dir)
+            preview_used = "Preview fallback:" in compile_output
+            compile_status = "预览版" if ok and preview_used else "成功" if ok else "失败"
+            write_text_with_encoding(compile_log_path, compile_output)
+            candidate_pdf = _compiled_pdf_for(project.main_tex_path, run_dir)
+            pdf_path = str(candidate_pdf) if candidate_pdf else None
+            if preview_used:
+                compile_note = "期刊正式模板未在本地完整通过，当前 PDF 是安全预览版。"
+            elif not ok:
+                compile_note = explain_compile_failure(compile_output)
 
     report = build_report(analysis_after, actions, rules["name"], risk_after, compile_status=compile_status)
     report_path = run_dir / "format_report.md"
