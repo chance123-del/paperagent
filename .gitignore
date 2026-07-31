@@ -4,6 +4,10 @@ __pycache__/
 
 # Generated application artifacts and local logs
 outputs/
+!outputs/
+outputs/*
+!outputs/annotations_template/
+!outputs/annotations_template/annotations.xlsx
 *.log
 
 # Packaged distributions
