@@ -17,6 +17,7 @@ from paperformat_agent.exporter import export_docx_from_tex
 from paperformat_agent.guidelines import apply_guideline_overrides, apply_requirement_text
 from paperformat_agent.hybrid_insert import build_block, insert_block
 from paperformat_agent.journal_resolver import JOURNAL_PROFILES, apply_journal_profile, profile_choices, resolve_journal
+from paperformat_agent.models import RepairAction
 from paperformat_agent.placeholders import apply_placeholder_assets, parse_caption_lines, unpack_bundle
 from paperformat_agent.project_io import find_main_tex, package_project, prepare_project
 from paperformat_agent.reference_style import apply_reference_article_style
@@ -180,6 +181,10 @@ body { background: var(--canvas) !important; }
 .workflow-step strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 14px; }
 .workflow-step.active { box-shadow: inset 0 3px 0 var(--mint); background: var(--mint-pale); }
 .workflow-page { display: none; }
+.project-package { margin-top: 16px; padding: 18px; border: 1px solid #b9d8cd; border-radius: 8px; background: #f6fbf8; }
+.project-package h3 { margin: 0 0 5px; color: var(--navy); font-size: 16px; }
+.project-package p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.project-package .required { color: #a44620; font-weight: 700; }
 .workflow-page.active { display: block; }
 .workflow-page > .panel, .workflow-page > .results { margin-bottom: 0; }
 #stage-input, #stage-rules, #stage-review, #stage-export { scroll-margin-top: 16px; }
@@ -402,6 +407,8 @@ def run_agent(
     target_guide: str | None,
     reference_article: str | None,
     bibliography_file: str | None,
+    initial_asset_bundle: str | None,
+    initial_annotation_bundle: str | None,
     output_path: str,
     compile_pdf: bool,
 ):
@@ -442,6 +449,37 @@ def run_agent(
     if citation_mapping:
         repaired_text = remove_embedded_reference_list(repaired_text, actions)
     repaired_text = apply_bibliography(repaired_text, bibliography_name, rules, actions)
+    asset_summary: list[str] = []
+    if initial_asset_bundle:
+        try:
+            bundle_dir = unpack_bundle(initial_asset_bundle, run_dir)
+            annotations = load_annotations(initial_annotation_bundle, run_dir)
+        except ValueError as exc:
+            raise gr.Error(str(exc)) from exc
+        repaired_text, matched, missing, duplicate = apply_placeholder_assets(
+            repaired_text,
+            bundle_dir,
+            project.project_dir,
+            rules,
+            figure_captions=annotations.figures,
+            table_captions=annotations.tables,
+            caption_links=annotations.links,
+        )
+        asset_summary = [
+            f"图表占位符：{len(matched)} 个已匹配",
+            f"缺失素材：{len(missing)} 个",
+            f"重复或忽略：{len(duplicate)} 个",
+            f"图表注模板待确认：{len(annotations.warnings)} 项",
+        ]
+        mapping_report = run_dir / "asset_mapping_report.md"
+        mapping_lines = ["# Asset Mapping Report", "", "## Matched", ""]
+        mapping_lines.extend(f"- {item}" for item in matched) if matched else mapping_lines.append("- No assets matched.")
+        for title, entries in (("Missing", missing), ("Duplicate or ignored", duplicate), ("Annotation review required", annotations.warnings)):
+            if entries:
+                mapping_lines.extend(["", f"## {title}", "", *[f"- {item}" for item in entries]])
+        mapping_report.write_text("\n".join(mapping_lines) + "\n", encoding="utf-8")
+        shutil.copy2(mapping_report, project.project_dir / mapping_report.name)
+        actions.append(RepairAction("placeholder_asset_mapping", f"Applied {len(matched)} exact placeholder asset matches."))
     analysis_after = analyze(repaired_text, rules)
     risk_before, risk_after = assess_risk(analysis_before), assess_risk(analysis_after)
 
@@ -487,6 +525,7 @@ def run_agent(
             f"- 额外格式要求：`{', '.join(guideline_changes + text_requirement_changes) or '未检测到'}`",
             f"- 参考论文风格：`{', '.join(reference_changes) if reference_changes else '未检测到'}`",
             f"- 参考文献：`{bibliography_name + '.bib' if bibliography_name else '未提供'}`",
+            f"- 项目图表包：`{'；'.join(asset_summary) if asset_summary else '未上传'}`",
             f"- 数字引用映射：`{len(citation_mapping)} 条已转换，{len(unresolved_citations)} 条未匹配`" if bibliography_name else "- 数字引用映射：`未启用（请上传 BibTeX 文献库）`",
             f"- 格式评分：`{risk_before.overall_score}/100 -> {risk_after.overall_score}/100`",
             f"- 自动修复数量：`{len(actions)}`",
@@ -696,6 +735,20 @@ def build_demo() -> gr.Blocks:
             with gr.Row():
                 uploaded = gr.File(label="上传论文", type="filepath", file_types=[".docx", ".pdf", ".md", ".markdown", ".tex", ".zip"])
                 local_path = gr.Textbox(label="本地论文路径", placeholder=r"D:\Documents\my-paper.docx")
+            gr.HTML("""
+            <section class="project-package">
+              <h3>项目材料包</h3>
+              <p>首次生成即按占位符 <code>[Fig1]</code>、<code>[Table1]</code> 精确匹配资源；图表注、表注和链接只采用您在模板中提供的内容。<span class="required"> 不会自动编写题注、DOI 或参考文献。</span></p>
+            </section>
+            """)
+            with gr.Row():
+                initial_asset_bundle = gr.File(label="图表素材压缩包（ZIP，可选）", type="filepath", file_types=[".zip"])
+                initial_annotation_bundle = gr.File(label="图表注/表注模板（XLSX 或 ZIP，可选）", type="filepath", file_types=[".xlsx", ".zip"])
+                gr.DownloadButton(
+                    "下载图表注模板",
+                    value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None,
+                    interactive=ANNOTATION_TEMPLATE.exists(),
+                )
             with gr.Accordion("格式与文献材料", open=True, elem_classes=["advanced"]):
                 target_guide = gr.File(label="上传格式要求或官方模板（可选）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"])
                 reference_article = gr.File(label="上传公开参考论文（PDF / Word，可选）", type="filepath", file_types=[".pdf", ".docx"])
@@ -814,7 +867,7 @@ def build_demo() -> gr.Blocks:
 
         run_button.click(
             run_agent,
-            inputs=[uploaded, local_path, rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, bibliography_file, output_path, gr.State(True)],
+            inputs=[uploaded, local_path, rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, bibliography_file, initial_asset_bundle, initial_annotation_bundle, output_path, gr.State(True)],
             outputs=[summary, tex_file, project_file, report_file, compile_log, pdf_file, word_file, reviewer, run_state],
         )
         formal_button.click(
