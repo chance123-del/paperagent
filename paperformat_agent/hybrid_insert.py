@@ -51,7 +51,15 @@ def _caption_label(kind: str, caption: str, rules: dict | None) -> str:
     return _escape(caption_prefixes.get(kind, kind.title()))
 
 
-def build_block(kind: str, content: str, upload: str | None, caption: str, project_dir: Path, rules: dict | None = None) -> str:
+def build_block(
+    kind: str,
+    content: str,
+    upload: str | None,
+    caption: str,
+    project_dir: Path,
+    rules: dict | None = None,
+    caption_link: tuple[str, str] | None = None,
+) -> str:
     policy = _insertion_policy(rules)
     if kind == "Hyperlink":
         if not upload or not content.strip():
@@ -68,6 +76,9 @@ def build_block(kind: str, content: str, upload: str | None, caption: str, proje
         assets.mkdir(exist_ok=True)
         destination = assets / source.name
         shutil.copy2(source, destination)
+        caption_text = _caption_label("figure", caption, rules)
+        if caption_link:
+            caption_text += r" \href{" + _escape(caption_link[0]) + "}{" + _escape(caption_link[1]) + "}"
         return (
             "\\begin{figure}["
             + str(policy.get("figure_float", "H"))
@@ -78,7 +89,7 @@ def build_block(kind: str, content: str, upload: str | None, caption: str, proje
             + "]{assets/"
             + destination.name
             + "}\n\\caption{"
-            + _caption_label("figure", caption, rules)
+            + caption_text
             + "}\n\\end{figure}"
         )
     rows = _read_table(content, upload)
@@ -86,10 +97,13 @@ def build_block(kind: str, content: str, upload: str | None, caption: str, proje
         raise ValueError("Provide a Markdown/CSV table or upload an Excel/CSV file.")
     width = max(len(row) for row in rows)
     column_spec = str(policy.get("table_columns", "l"))
+    caption_text = _caption_label("table", caption, rules)
+    if caption_link:
+        caption_text += r" \href{" + _escape(caption_link[0]) + "}{" + _escape(caption_link[1]) + "}"
     lines = [
         "\\begin{table}[" + str(policy.get("table_float", "H")) + "]",
         str(policy.get("table_alignment", "\\centering")),
-        "\\caption{" + _caption_label("table", caption, rules) + "}",
+        "\\caption{" + caption_text + "}",
         "\\begin{tabular}{" + (column_spec * width) + "}",
         "\\toprule",
     ]

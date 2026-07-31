@@ -10,6 +10,7 @@ from pathlib import Path
 import gradio as gr
 
 from paperformat_agent.analyzer import analyze
+from paperformat_agent.annotations import load_annotations
 from paperformat_agent.bibliography import add_bibliography_to_project, apply_bibliography, apply_numeric_markers, remove_embedded_reference_list
 from paperformat_agent.feedback import apply_text_feedback, save_feedback_evidence
 from paperformat_agent.exporter import export_docx_from_tex
@@ -37,6 +38,7 @@ STYLE_RULE = "单独指定基础格式规则"
 STYLE_CUSTOM = "完全自定插入样式"
 RUN_CONFIG = "run_config.json"
 REVIEWER_PAGE = BASE_DIR / "web" / "reviewer.html"
+ANNOTATION_TEMPLATE = BASE_DIR / "outputs" / "annotations_template" / "annotations.xlsx"
 
 
 def _reviewer_html(pdf_path: str | None) -> str:
@@ -612,6 +614,7 @@ def run_hybrid_insert(
 def run_placeholder_insert(
     run_directory: str,
     asset_bundle: str | None,
+    annotation_bundle: str | None,
     figure_caption_text: str,
     table_caption_text: str,
     style_mode: str,
@@ -633,6 +636,14 @@ def run_placeholder_insert(
     rules = _resolve_insert_rules(run_dir, style_mode, override_profile, override_rule, custom_figure_width, custom_figure_prefix, custom_table_prefix)
     figure_captions = parse_caption_lines(figure_caption_text)
     table_captions = parse_caption_lines(table_caption_text)
+    try:
+        annotations = load_annotations(annotation_bundle, run_dir)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
+    # Workbook values win over the legacy free-text fields because the workbook
+    # carries an explicit prefix policy and can be audited after delivery.
+    figure_captions.update(annotations.figures)
+    table_captions.update(annotations.tables)
     updated, matched, missing, duplicate = apply_placeholder_assets(
         read_text_best_effort(source_tex)[0],
         bundle_dir,
@@ -640,6 +651,7 @@ def run_placeholder_insert(
         rules,
         figure_captions=figure_captions,
         table_captions=table_captions,
+        caption_links=annotations.links,
     )
     write_text_with_encoding(source_tex, updated)
     write_text_with_encoding(main_tex, updated)
@@ -653,6 +665,8 @@ def run_placeholder_insert(
         lines.extend(["", "### 未匹配", ""] + [f"- {item}" for item in missing])
     if duplicate:
         lines.extend(["", "### 重名/忽略", ""] + [f"- {item}" for item in duplicate])
+    if annotations.warnings:
+        lines.extend(["", "### 图表注模板待确认项", ""] + [f"- {item}" for item in annotations.warnings])
     if note:
         lines.extend(["", f"**编译说明：** {note}"])
     return "\n".join(lines), str(source_tex), str(project_zip), gr.update(value=pdf_path, visible=bool(pdf_path))
@@ -748,6 +762,17 @@ def build_demo() -> gr.Blocks:
                 gr.Markdown("正文里可直接写 `[Fig1]`、`[图1]`、`[Table1]`、`[表1]`。上传 ZIP 压缩包后，系统会按文件名自动匹配并替换。")
                 placeholder_bundle = gr.File(label="上传素材压缩包（ZIP）", type="filepath", file_types=[".zip"])
                 with gr.Row():
+                    gr.DownloadButton(
+                        "下载图表注/表注填写模板",
+                        value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None,
+                        interactive=ANNOTATION_TEMPLATE.exists(),
+                    )
+                    annotation_bundle = gr.File(
+                        label="上传已填写图表注模板（annotations.xlsx 或 annotations.zip，可选）",
+                        type="filepath",
+                        file_types=[".xlsx", ".zip"],
+                    )
+                with gr.Row():
                     placeholder_style_mode = gr.Dropdown(label="批量插入规则来源", choices=[STYLE_CURRENT, STYLE_JOURNAL, STYLE_RULE, STYLE_CUSTOM], value=STYLE_CURRENT)
                     placeholder_style_journal = gr.Dropdown(label="单独指定期刊规则包", choices=profile_choices_ui, value=RULE_NONE)
                     placeholder_style_rule = gr.Dropdown(label="单独指定基础规则", choices=rule_choices, value=RULE_NONE)
@@ -807,7 +832,7 @@ def build_demo() -> gr.Blocks:
         )
         placeholder_button.click(
             run_placeholder_insert,
-            inputs=[run_state, placeholder_bundle, figure_captions, table_captions, placeholder_style_mode, placeholder_style_journal, placeholder_style_rule, placeholder_custom_width, placeholder_custom_figure_prefix, placeholder_custom_table_prefix],
+            inputs=[run_state, placeholder_bundle, annotation_bundle, figure_captions, table_captions, placeholder_style_mode, placeholder_style_journal, placeholder_style_rule, placeholder_custom_width, placeholder_custom_figure_prefix, placeholder_custom_table_prefix],
             outputs=[placeholder_summary, placeholder_source, placeholder_package, placeholder_pdf],
         )
         feedback_button.click(
@@ -824,7 +849,7 @@ if __name__ == "__main__":
     build_demo().launch(
         css=APP_CSS,
         js=REVIEW_BRIDGE_JS,
-        allowed_paths=[str(OUTPUT_DIR.resolve()), str(REVIEWER_PAGE.resolve())],
+        allowed_paths=[str(OUTPUT_DIR.resolve()), str(REVIEWER_PAGE.resolve()), str(ANNOTATION_TEMPLATE.resolve())],
         server_name="127.0.0.1",
         server_port=7861,
     )

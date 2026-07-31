@@ -86,9 +86,11 @@ def apply_placeholder_assets(
     rules: dict | None,
     figure_captions: dict[str, str] | None = None,
     table_captions: dict[str, str] | None = None,
+    caption_links: dict[str, tuple[str, str]] | None = None,
 ) -> tuple[str, list[str], list[str], list[str]]:
     figure_captions = figure_captions or {}
     table_captions = table_captions or {}
+    caption_links = caption_links or {}
     placeholders = find_placeholders(tex)
     assets, ignored = scan_assets(bundle_dir)
     updated = tex
@@ -106,7 +108,7 @@ def apply_placeholder_assets(
         selected = candidates[0]
         caption_map = figure_captions if selected.kind == "Figure" else table_captions
         caption = caption_map.get(key, "")
-        block = build_block(selected.kind, "", str(selected.source), caption, project_dir, rules)
+        block = build_block(selected.kind, "", str(selected.source), caption, project_dir, rules, caption_links.get(key))
         updated = replace_placeholder(updated, marker, block)
         matched.append(f"{marker} -> {selected.display_name}")
 
