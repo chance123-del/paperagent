@@ -106,7 +106,13 @@ def _pdf_page_blocks(raw_text: str) -> list[tuple[str, object]]:
 
 
 def _contains_cjk(document: SourceDocument) -> bool:
-    values = [document.title, document.abstract_text, document.keywords_text]
+    values = [
+        document.title,
+        document.abstract_text,
+        document.keywords_text,
+        *document.figure_captions,
+        *document.table_captions,
+    ]
     for _, payload in document.blocks:
         values.append(str(payload))
     return any("\u4e00" <= char <= "\u9fff" for value in values for char in value)

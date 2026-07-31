@@ -13,6 +13,7 @@ from .hybrid_insert import build_block, replace_placeholder
 PLACEHOLDER_PATTERN = re.compile(r"\[(Fig\d+|Figure\d+|Table\d+|图\d+|表\d+)\]", re.IGNORECASE)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 TABLE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".tsv", ".md"}
+_CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
 
 @dataclass
@@ -114,6 +115,8 @@ def apply_placeholder_assets(
         updated = replace_placeholder(updated, marker, block)
         matched.append(f"{marker} -> {selected.display_name}")
 
+    if _CJK_PATTERN.search(updated) and not re.search(r"\\usepackage(?:\[[^]]+\])?\{ctex\}", updated):
+        updated = re.sub(r"(\\documentclass[^\n]*\n)", r"\1\\usepackage[UTF8]{ctex}\n", updated, count=1)
     return updated, matched, missing, duplicate + ([f"忽略文件: {', '.join(ignored)}"] if ignored else [])
 
 

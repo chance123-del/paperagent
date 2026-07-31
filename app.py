@@ -798,7 +798,7 @@ def build_demo() -> gr.Blocks:
                 journal_profile = gr.Dropdown(label="期刊规则包", choices=profile_choices_ui, value=RULE_NONE)
                 rule_file = gr.Dropdown(label="基础格式规则", choices=rule_choices, value=RULE_NONE)
             journal_match = gr.Markdown("", visible=False)
-            requirement_text = gr.Textbox(label="直接填写排版要求（可选）", lines=3, placeholder="例如：A4、页边距 2.5cm、1.5 倍行距、参考文献 IEEEtran")
+            requirement_text = gr.Textbox(label="直接填写排版要求（可选）", lines=3, placeholder="例如：A4、页边距 2.5cm、1.5 倍行距、参考文献 IEEEtran；图表注与链接文字可使用中文")
             with gr.Accordion("规则检查", open=False, elem_classes=["advanced"]):
                 rule_summary = gr.Markdown(value=_rule_summary(RULE_NONE))
 
