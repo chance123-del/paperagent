@@ -201,12 +201,20 @@ def main():
     heading(d, "4.2 图表注合集包：与占位符严格分离", 2)
     para(d, "用户可单独上传 annotations.zip。该包是“文字和链接元数据”，不是图片/表格资源包，也不在正文中产生新的图表占位符。正文只保留 [Fig1]、[Table1] 等对象占位符；系统先匹配对象，再以 Fig1/Table1 作为键读取注释记录并附着到对应对象。", indent=True)
     table(d, ["工作表/文件", "最小字段", "系统行为"], [
-        ("Figures", "asset_id, caption, note, source, alt_text", "仅接受 asset_id=FigN；匹配图像后写入题注/图注区。"),
-        ("Tables", "asset_id, caption, note, source, alt_text", "仅接受 asset_id=TableN；匹配表格后写入表题/表注区。"),
+        ("Figures", "asset_id, caption_body, caption_as_provided, prefix_policy, note, source, alt_text", "仅接受 asset_id=FigN；匹配图像后写入题注/图注区。"),
+        ("Tables", "asset_id, caption_body, caption_as_provided, prefix_policy, note, source, alt_text", "仅接受 asset_id=TableN；匹配表格后写入表题/表注区。"),
         ("Links（可选）", "asset_id, url_or_doi, link_text", "与对应图表注绑定；用户只需粘贴 DOI 或 URL。"),
         ("JSON/CSV 等价格式", "字段名与上述一致", "便于自动化；界面同时提供模板下载和表格编辑。"),
     ], [3.4, 6.3, 6.5])
     note(d, "用户体验约定：", "不要求用户学习 LaTeX 或填写 \u005ccaption。用户只需在下载的 Excel 模板每行填写 Fig1/Table1 及其文字；未填写的图注/表注不会被系统凭空生成。")
+    heading(d, "4.2.1 已带 Fig1/Table1 前缀的图注与表注", 3)
+    para(d, "annotations.xlsx 同时保留 caption_as_provided（用户原样输入）和 caption_body（推荐填写、去掉编号前缀后的正文）。asset_id 只用于匹配，绝不自动显示在最终稿中；是否显示“Figure 1.”、“Fig. 1.”、“表 1”等由目标模板编号机制决定。", indent=True)
+    table(d, ["用户输入示例", "识别/渲染规则", "审计与确认"], [
+        ("asset_id=Fig1；caption_body=实验装置示意图", "模板生成 Figure 1.，再接题注正文。", "输出：Figure 1. 实验装置示意图。"),
+        ("asset_id=Fig1；caption_as_provided=Fig. 1 Experimental setup", "系统识别开头为与 Fig1 等价的编号前缀；当 prefix_policy=template 时，只在渲染副本中去掉该前缀，保留原文。", "报告“已规范化前缀”；预览中可一键改为保留原样。"),
+        ("asset_id=Table1；caption_as_provided=Table 1. Sample characteristics", "按已确认期刊规则生成表题位置和样式；若规则要求自动编号，避免重复 Table 1。", "未识别或歧义的前缀进入确认队列，不删除文字。"),
+    ], [4.6, 8.0, 3.6])
+    bullet(d, "prefix_policy 提供 template（默认，采用期刊模板编号）、keep_as_provided（保留输入前缀并提示潜在重复）和 review_required（不渲染至正式稿，等待确认）。系统只识别与 asset_id 数字一致的开头前缀，例如 Fig1/Fig. 1/Figure 1/图 1/表 1；不得改写题注其余文字。")
     heading(d, "4.3 匹配算法与状态机", 2)
     table(d, ["规则", "行为", "结果"], [
         ("精确唯一匹配", "[Fig1] 对应归一化后唯一的 Fig1.png。", "自动插入，生成 \u005clabel{fig:1} 或规则指定标签。"),
