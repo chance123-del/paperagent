@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 import re
 import shutil
+from urllib.parse import urlparse
 
 
 def _escape(value: str) -> str:
@@ -53,27 +54,38 @@ def _caption_label(kind: str, caption: str, rules: dict | None) -> str:
 
 def build_block(
     kind: str,
-    content: str,
+    content: str | None,
     upload: str | None,
-    caption: str,
+    caption: str | None,
     project_dir: Path,
     rules: dict | None = None,
     caption_link: tuple[str, str] | None = None,
 ) -> str:
+    content = content or ""
+    caption = caption or ""
     policy = _insertion_policy(rules)
     if kind == "Hyperlink":
         if not upload or not content.strip():
             raise ValueError("Enter link text and a URL for a hyperlink insertion.")
+        parsed = urlparse(upload.strip())
+        if parsed.scheme.lower() not in {"http", "https", "mailto"} or any(char in upload for char in "{}\r\n"):
+            raise ValueError("Use a valid http, https, or mailto URL.")
         command = str(policy.get("hyperlink_command", "href")).strip() or "href"
-        return chr(92) + command + "{" + upload.strip() + "}{" + content.strip() + "}"
+        return chr(92) + command + "{" + upload.strip() + "}{" + _escape(content.strip()) + "}"
     if kind == "Formula":
-        return "\\begin{equation}\n" + content.strip() + "\n\\end{equation}"
+        formula = content.strip()
+        if not formula:
+            raise ValueError("Enter a LaTeX formula before inserting.")
+        forbidden = (r"\documentclass", r"\usepackage", r"\begin{document}", r"\end{document}", r"\input", r"\include", r"\write18")
+        if any(token in formula.lower() for token in forbidden):
+            raise ValueError("The formula contains a document-level or unsafe LaTeX command.")
+        return "\\begin{equation}\n" + formula + "\n\\end{equation}"
     if kind == "Figure":
         if not upload:
             raise ValueError("Upload an image for a figure insertion.")
         source = Path(upload)
         assets = project_dir / "assets"
-        assets.mkdir(exist_ok=True)
+        assets.mkdir(parents=True, exist_ok=True)
         destination = assets / source.name
         shutil.copy2(source, destination)
         caption_text = _caption_label("figure", caption, rules)
@@ -119,7 +131,9 @@ def replace_placeholder(tex: str, placeholder: str, block: str) -> str:
     return tex.replace(placeholder, block, 1)
 
 
-def insert_block(tex: str, block: str, section: str, placement: str, anchor: str) -> str:
+def insert_block(tex: str, block: str, section: str | None, placement: str, anchor: str | None) -> str:
+    section = section or ""
+    anchor = anchor or ""
     marker = ""
     if anchor.strip():
         index = tex.find(anchor.strip())

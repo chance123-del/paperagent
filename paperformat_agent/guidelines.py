@@ -28,9 +28,10 @@ def apply_guideline_overrides(base_rules: dict, guide_path: str | None) -> tuple
     return apply_requirement_text(base_rules, extract_guideline_text(guide_path))
 
 
-def apply_requirement_text(base_rules: dict, text: str) -> tuple[dict, list[str]]:
+def apply_requirement_text(base_rules: dict, text: str | None) -> tuple[dict, list[str]]:
     """Apply explicit layout requirements entered by a user or extracted from a guide."""
     rules = dict(base_rules)
+    text = text or ""
     if not text.strip():
         return rules, []
     changes: list[str] = []

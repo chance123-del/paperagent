@@ -2,12 +2,12 @@
   "formulas": [
     {
       "formula_id": "Eq1",
-      "latex": "\\mathrm{Accuracy}=\\frac{TP+TN}{TP+TN+FP+FN}",
+      "latex": "E = mc^2",
       "tag": "1"
     },
     {
       "formula_id": "公式2",
-      "latex": "E=mc^2",
+      "latex": "y = \\beta_0 + \\beta_1 x + \\varepsilon",
       "tag": "2"
     }
   ]

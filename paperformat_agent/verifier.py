@@ -10,6 +10,7 @@ from pathlib import Path
 
 _ACTIVE_PROCESSES: set[subprocess.Popen[str]] = set()
 _PROCESS_LOCK = threading.Lock()
+_TECTONIC_NETWORK_UNAVAILABLE = False
 
 
 def resolve_tectonic_binary(explicit_path: str | None = None) -> str | None:
@@ -81,6 +82,16 @@ def cancel_active_compilations() -> int:
     return len(processes)
 
 
+def _compile_with_local_renderer(input_file: Path, output_dir: Path, previous_output: str) -> tuple[bool, str]:
+    """Guarantee a reviewable PDF even when no complete LaTeX runtime is available."""
+    from .exporter import export_pdf_from_tex
+
+    project_dir = input_file.parent
+    ok, note = export_pdf_from_tex(input_file, output_dir / f"{input_file.stem}.pdf", project_dir)
+    marker = "\nBuilt-in PDF fallback: " + note
+    return ok, previous_output + marker
+
+
 def _compile_with_xelatex(input_file: Path, output_dir: Path, xelatex: str) -> tuple[bool, str]:
     command = [xelatex, "-interaction=nonstopmode", "-halt-on-error", f"-output-directory={output_dir}", str(input_file)]
     ok, output = _run_command(command, input_file.parent)
@@ -131,6 +142,7 @@ def _compile_with_xelatex(input_file: Path, output_dir: Path, xelatex: str) -> t
 
 
 def compile_tex(input_path: str | Path, outdir: str | Path, tectonic_path: str | None = None) -> tuple[bool, str]:
+    global _TECTONIC_NETWORK_UNAVAILABLE
     input_file = Path(input_path).resolve()
     output_dir = Path(outdir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -138,11 +150,24 @@ def compile_tex(input_path: str | Path, outdir: str | Path, tectonic_path: str |
     xelatex = resolve_xelatex_binary()
     if xelatex:
         ok, output = _compile_with_xelatex(input_file, output_dir, xelatex)
-        return ok, "Compiler: MiKTeX XeLaTeX\n" + output
+        prefixed = "Compiler: MiKTeX XeLaTeX\n" + output
+        if ok:
+            return True, prefixed
+        return _compile_with_local_renderer(input_file, output_dir, prefixed)
 
     binary = resolve_tectonic_binary(tectonic_path)
     if not binary:
-        return False, "No local LaTeX compiler was found. Install MiKTeX or provide Tectonic."
+        return _compile_with_local_renderer(
+            input_file,
+            output_dir,
+            "No local LaTeX compiler was found. Install MiKTeX or provide Tectonic.",
+        )
+    if _TECTONIC_NETWORK_UNAVAILABLE:
+        return _compile_with_local_renderer(
+            input_file,
+            output_dir,
+            "Compiler: Tectonic skipped because its package service was unreachable earlier in this application session.",
+        )
 
     command = [
         binary,
@@ -155,12 +180,20 @@ def compile_tex(input_path: str | Path, outdir: str | Path, tectonic_path: str |
     ]
 
     ok, output = _run_command(command, input_file.parent)
-    return ok, "Compiler: Tectonic\n" + output
+    prefixed = "Compiler: Tectonic\n" + output
+    if ok:
+        return True, prefixed
+    lowered = output.lower()
+    if "client error (connect)" in lowered or "unexpected eof during handshake" in lowered or "failed to download" in lowered:
+        _TECTONIC_NETWORK_UNAVAILABLE = True
+    return _compile_with_local_renderer(input_file, output_dir, prefixed)
 
 
 def explain_compile_failure(log_text: str) -> str:
     lowered = log_text.lower()
     if "failed to download" in lowered or "client error (connect)" in lowered:
+        if "built-in pdf fallback:" in lowered:
+            return "Tectonic resources were unavailable, so the system generated a local compatibility PDF instead."
         return "Compilation failed because Tectonic tried to download missing LaTeX resources, but network access was blocked."
     if "not found" in lowered and "font" in lowered:
         return "Compilation failed because required fonts or LaTeX resources were not available locally."

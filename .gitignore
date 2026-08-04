@@ -1,15 +1,28 @@
 # Python caches
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.local.*
 
 # Generated application artifacts and local logs
 outputs/
 !outputs/
 outputs/*
 !outputs/annotations_template/
-outputs/annotations_template/*
 !outputs/annotations_template/annotations.xlsx
 *.log
+paperagent-server*.log
+.gradio/
+.pytest_cache/
+.coverage
 
 # Packaged distributions
 paperagent.zip

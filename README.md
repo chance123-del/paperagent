@@ -34,13 +34,15 @@ python app.py
 
 若希望一键匹配参考文献，请在界面上传 `.bib` 文件。系统会按选中的期刊规则写入 `bibliographystyle`、引用宏包和 `references.bib` 链接。
 
+## 公式合集与交付审计
+
+在 DOCX 或 Markdown 正文中写入 `[Eq1]`、`[Equation1]` 或 `[公式1]` 作为公式位置标记，再上传 JSON 或包含 `formulas.json` 的 ZIP。每个条目提供经过作者确认的 `latex`，可选 `tag` 会生成右侧公式编号。系统拒绝文件读写、宏定义等危险 LaTeX 命令；缺失、重复或未经确认的公式会阻止正式交付，不会根据图片猜写内容。模板见 `templates/formulas.template.json`，示例见 `samples/formulas.example.json`。
+
+每次处理会生成 `agent_trace.json`，记录稿件解析、规则决策、修复、素材匹配、预览验证和交付闸门的状态与证据。该轨迹同时写入 LaTeX 源码包，正式导出后会更新为最终交付状态。
+
+对于包含公式区域或无法可靠恢复表格行列结构的 PDF，系统保留原始 PDF 作为保真预览并阻止错误重排；继续可编辑交付时应提供 DOCX、LaTeX 或表格源文件。
+
 ## 命令行
-
-## 公式合集
-
-在 DOCX 或 Markdown 正文中写入 `[Eq1]` 或 `[公式1]` 作为公式位置标记，再上传含 `formulas.json` 的 ZIP（或直接上传该 JSON）。每个条目提供经确认的 LaTeX 与可选 `tag`；`tag: "1"` 会生成右侧编号 `(1)`。可将对应的手写图片一同放入 ZIP 留作原始凭证，但没有确认的 LaTeX 时系统会阻止正式交付，不会猜写公式。
-
-示例见 `samples/formulas.example.json`。
 
 ```powershell
 python -m paperformat_agent.cli repair `

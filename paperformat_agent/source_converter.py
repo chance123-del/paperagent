@@ -180,14 +180,14 @@ def _caption_text(value: str, fallback: str) -> str:
 
 
 def pdf_table_extraction_warnings(page_text: str) -> list[str]:
-    """Flag table-like PDF text that has lost its row/column structure."""
+    """Flag table-like PDF text whose row and column structure was lost."""
     warnings: list[str] = []
     spaced_table = r"(?:table|t\s*a\s*b\s*l\s*e|表)\s*\d+(?:[.-]\d+)?"
     headers = r"(?:subjects?|age|males?|females?|training|受试者|年龄|男性|女性|训练)"
     for line in page_text.splitlines():
         normalized = _clean_text(line)
         if re.search(spaced_table, normalized, re.IGNORECASE) and re.search(headers, normalized, re.IGNORECASE):
-            warning = "A PDF table was detected but its row/column structure could not be reconstructed; provide DOCX, XLSX, CSV, or a table asset before formal delivery."
+            warning = "检测到 PDF 表格，但行列结构无法可靠还原；正式交付前请提供 DOCX、XLSX、CSV 或表格素材。"
             if warning not in warnings:
                 warnings.append(warning)
     return warnings
@@ -343,7 +343,7 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
     for page_number, assets in formula_assets.items():
         page_images.setdefault(page_number, []).extend(assets)
     if formula_assets:
-        notes.append("PDF contains formula regions. Use the original PDF for preview and provide DOCX or LaTeX for an editable, reflowed manuscript.")
+        notes.append("PDF 含有公式区域；为避免公式误排，预览保留原始 PDF，编辑交付请提供 DOCX 或 LaTeX 源稿。")
     full_text = "\n".join(page_texts)
     introduction = re.search(r"(?im)^\s*1\s*\.\s*introduction\s*$", full_text)
     front_matter = full_text[:introduction.start()] if introduction else page_texts[0] if page_texts else ""
@@ -379,7 +379,7 @@ def load_pdf(source: Path, assets_dir: Path) -> SourceDocument:
         images=images,
         figure_captions=figure_captions,
         table_captions=table_captions,
-        notes=notes,
+        notes=list(dict.fromkeys(notes)),
     )
 
 
@@ -441,7 +441,7 @@ def render_latex(document: SourceDocument, rules: dict) -> str:
             image = payload
             embedded_figures = True
             if "-formula-" in image.name:
-                # Formula crops preserve visible math but must not consume figure numbers or captions.
+                # Formula crops preserve visible math without consuming figure numbers or captions.
                 lines.extend([r"\begin{center}", rf"\includegraphics[width=0.85\linewidth]{{assets/{image.name}}}", r"\end{center}"])
                 continue
             figure_number += 1

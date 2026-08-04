@@ -29,23 +29,25 @@ class SourceCaptionTests(unittest.TestCase):
             self.assertIn(r"\caption{数据集统计}", latex)
             self.assertNotIn("图 1：系统框架", latex)
 
-    def test_warns_when_a_pdf_table_has_lost_its_structure(self) -> None:
-        warning = pdf_table_extraction_warnings("T a b l e 1 Clinical data Subjects Age (years) Training set")
-
-        self.assertEqual(len(warning), 1)
-        self.assertIn("could not be reconstructed", warning[0])
-
     def test_formula_crop_does_not_consume_a_figure_caption(self) -> None:
         document = SourceDocument(
-            title="Test",
+            title="Formula fidelity",
             blocks=[("figure", Path("page-1-formula-1.png")), ("figure", Path("page-1-image-1.png"))],
-            figure_captions=["Actual figure caption"],
+            images=[],
+            figure_captions=["Actual experiment"],
         )
-
         latex = render_latex(document, {})
 
+        self.assertEqual(latex.count(r"\begin{figure}"), 1)
+        self.assertIn(r"\caption{Actual experiment}", latex)
         self.assertNotIn(r"\caption{Preserved formula}", latex)
-        self.assertEqual(latex.count(r"\caption{Actual figure caption}"), 1)
+        self.assertIn(r"\begin{center}", latex)
+
+    def test_warns_when_pdf_table_structure_is_flattened(self) -> None:
+        warnings = pdf_table_extraction_warnings("Table 2 Subjects Age Males Females Training")
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("行列结构无法可靠还原", warnings[0])
 
 
 if __name__ == "__main__":

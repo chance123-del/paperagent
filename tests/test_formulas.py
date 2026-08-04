@@ -11,7 +11,10 @@ class FormulaTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "formulas.json"
-            source.write_text(json.dumps({"formulas": [{"formula_id": "Eq1", "latex": r"E = mc^2", "tag": "1"}]}), encoding="utf-8")
+            source.write_text(
+                json.dumps({"formulas": [{"formula_id": "Eq1", "latex": r"E = mc^2", "tag": "1"}]}),
+                encoding="utf-8",
+            )
             formulas = load_formulas(str(source), root)
             tex, matched, missing = apply_formulas("\\documentclass{article}\n[Eq1]", formulas)
 
@@ -31,6 +34,26 @@ class FormulaTests(unittest.TestCase):
             self.assertFalse(matched)
             self.assertEqual(len(missing), 1)
             self.assertEqual(len(formulas.warnings), 1)
+
+    def test_rejects_unsafe_latex_and_tag(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "upload.json"
+            source.write_text(
+                json.dumps(
+                    {
+                        "formulas": [
+                            {"formula_id": "Eq1", "latex": r"\input{secret}"},
+                            {"formula_id": "Eq2", "latex": "x+y", "tag": r"1}\input{secret}"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            formulas = load_formulas(str(source), root)
+
+            self.assertFalse(formulas.latex)
+            self.assertEqual(len(formulas.warnings), 2)
 
 
 if __name__ == "__main__":

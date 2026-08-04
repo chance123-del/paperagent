@@ -26,6 +26,17 @@ class AgentOrchestratorTests(unittest.TestCase):
             self.assertEqual(agent.trace["status"], "ready_for_review")
             self.assertIn("等待审阅", agent.to_markdown())
 
+    def test_formal_export_updates_persisted_status(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            agent = PaperDeliveryAgent(root, "draft.tex", "Journal")
+            agent.finish([], "成功")
+            agent.mark_formal_export(True, ["PDF: success", "DOCX: success"])
+
+            restored = PaperDeliveryAgent.load(root)
+            self.assertEqual(restored.trace["status"], "delivered")
+            self.assertTrue(restored.trace["formal_export"]["success"])
+
 
 if __name__ == "__main__":
     unittest.main()

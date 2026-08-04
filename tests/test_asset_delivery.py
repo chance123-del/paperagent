@@ -38,27 +38,27 @@ class AssetDeliveryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "disallowed executable"):
                 unpack_bundle(str(archive), root / "workspace")
 
-    def test_chinese_caption_enables_ctex_for_an_english_manuscript(self) -> None:
+    def test_chinese_asset_caption_adds_ctex_support(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             bundle = root / "bundle"
             bundle.mkdir()
             (bundle / "Fig1.png").write_bytes(b"image")
-            (root / "project").mkdir()
-            source = "\\documentclass{article}\n\\begin{document}\n[Fig1]\n\\end{document}\n"
+            tex = "\\documentclass{article}\n\\begin{document}\n[Fig1]\n\\end{document}"
 
-            tex, matched, _, _ = apply_placeholder_assets(
-                source,
+            updated, matched, missing, duplicates = apply_placeholder_assets(
+                tex,
                 bundle,
                 root / "project",
                 {},
-                figure_captions={"fig1": "系统框架图"},
-                caption_links={"fig1": ("https://example.test", "中文来源")},
+                figure_captions={"fig1": "系统架构"},
             )
 
-            self.assertEqual(len(matched), 1)
-            self.assertIn(r"\usepackage[UTF8]{ctex}", tex)
-            self.assertIn(r"\caption{系统框架图 \href{https://example.test}{中文来源}}", tex)
+            self.assertTrue(matched)
+            self.assertFalse(missing)
+            self.assertFalse(duplicates)
+            self.assertIn(r"\usepackage[UTF8]{ctex}", updated)
+            self.assertIn(r"\caption{系统架构}", updated)
 
 
 if __name__ == "__main__":

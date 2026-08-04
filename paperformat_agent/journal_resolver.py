@@ -61,8 +61,8 @@ def _crossref_lookup(journal_name: str) -> tuple[str, str] | None:
     return None
 
 
-def resolve_journal(journal_name: str) -> JournalMatch:
-    name = re.sub(r"\s+", " ", journal_name).strip()
+def resolve_journal(journal_name: str | None) -> JournalMatch:
+    name = re.sub(r"\s+", " ", journal_name or "").strip()
     if not name:
         return JournalMatch("generic", "Generic journal", "", "", "none", "No journal name provided")
     direct_profile = _profile_from_text(name)
