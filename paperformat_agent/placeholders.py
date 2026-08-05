@@ -5,12 +5,16 @@ from pathlib import Path
 import re
 import shutil
 import zipfile
+import csv
 
 from .archive_safety import safe_extract_zip
 from .hybrid_insert import build_block, replace_placeholder
 
 
-PLACEHOLDER_PATTERN = re.compile(r"\[(Fig\d+|Figure\d+|Table\d+|图\d+|表\d+)\]", re.IGNORECASE)
+PLACEHOLDER_PATTERN = re.compile(
+    r"\[(?:(FIG|TABLE):([A-Za-z0-9][A-Za-z0-9_.-]{0,63})|(Fig\d+|Figure\d+|Table\d+|图\d+|表\d+))\]",
+    re.IGNORECASE,
+)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 TABLE_EXTENSIONS = {".xlsx", ".xls", ".csv", ".tsv", ".md"}
 _CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
@@ -38,7 +42,7 @@ def find_placeholders(tex: str) -> list[tuple[str, str]]:
     results: list[tuple[str, str]] = []
     for match in PLACEHOLDER_PATTERN.finditer(tex):
         marker = match.group(0)
-        key = _normalize_key(match.group(1))
+        key = _normalize_key(match.group(2) or match.group(3))
         if marker not in seen:
             results.append((marker, key))
             seen.add(marker)
@@ -65,8 +69,32 @@ def unpack_bundle(bundle_path: str | None, workspace_dir: Path) -> Path:
 def scan_assets(bundle_dir: Path) -> tuple[dict[str, list[PlaceholderAsset]], list[str]]:
     assets: dict[str, list[PlaceholderAsset]] = {}
     ignored: list[str] = []
+    declared_files: set[Path] = set()
+    for manifest_path in bundle_dir.rglob("manifest.csv"):
+        try:
+            with manifest_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+        except (OSError, csv.Error) as exc:
+            ignored.append(f"{manifest_path.name}: {exc}")
+            continue
+        for row in rows:
+            asset_id = _normalize_key(row.get("id", ""))
+            declared_kind = str(row.get("type", "")).strip().lower()
+            relative_file = str(row.get("file", "")).strip()
+            source = (manifest_path.parent / relative_file).resolve()
+            if not asset_id or declared_kind not in {"figure", "table"} or not relative_file:
+                ignored.append(f"{manifest_path.name}: invalid manifest row")
+                continue
+            if not source.is_file() or bundle_dir.resolve() not in source.parents:
+                ignored.append(f"{manifest_path.name}: missing file {relative_file}")
+                continue
+            kind = "Figure" if declared_kind == "figure" else "Table"
+            assets.setdefault(asset_id, []).append(PlaceholderAsset(asset_id, kind, source, source.name))
+            declared_files.add(source)
     for path in sorted(bundle_dir.rglob("*")):
         if not path.is_file():
+            continue
+        if path.name.lower() == "manifest.csv" or path.resolve() in declared_files:
             continue
         suffix = path.suffix.lower()
         if suffix not in IMAGE_EXTENSIONS | TABLE_EXTENSIONS:
@@ -74,7 +102,7 @@ def scan_assets(bundle_dir: Path) -> tuple[dict[str, list[PlaceholderAsset]], li
             continue
         kind = "Figure" if suffix in IMAGE_EXTENSIONS else "Table"
         key = _normalize_key(path.stem)
-        if not re.fullmatch(r"(fig|table)\d+", key):
+        if not re.fullmatch(r"(fig|table)[a-z0-9]+", key):
             ignored.append(path.name)
             continue
         assets.setdefault(key, []).append(PlaceholderAsset(key=key, kind=kind, source=path, display_name=path.name))

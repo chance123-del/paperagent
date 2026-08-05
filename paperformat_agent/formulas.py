@@ -12,7 +12,10 @@ import zipfile
 from .archive_safety import safe_extract_zip
 
 
-PLACEHOLDER_PATTERN = re.compile(r"\[(Eq\d+|Equation\d+|公式\d+)\]", re.IGNORECASE)
+PLACEHOLDER_PATTERN = re.compile(
+    r"\[(?:EQ:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})|(Eq\d+|Equation\d+|公式\d+))\]",
+    re.IGNORECASE,
+)
 FORBIDDEN_COMMANDS = re.compile(
     r"\\(?:(?:input|include|write|write18|openout|read|catcode|usepackage|documentclass|"
     r"newcommand|renewcommand|def|csname|special|immediate)\b|begin\s*\{document\}|end\s*\{document\})",
@@ -68,7 +71,7 @@ def load_formulas(upload: str | None, workspace: Path) -> FormulaData:
         key = _key(entry.get("formula_id", entry.get("asset_id", "")))
         latex = str(entry.get("latex", "")).strip()
         tag = str(entry.get("tag", "")).strip()
-        if not re.fullmatch(r"eq\d+", key):
+        if not re.fullmatch(r"eq[a-z0-9]+", key):
             result.warnings.append(f"公式编号无效：{entry.get('formula_id', '')}。")
         elif not latex:
             result.warnings.append(f"{key}：缺少经用户确认的 LaTeX，不能根据手写图片猜写公式。")
@@ -89,7 +92,7 @@ def apply_formulas(tex: str, formulas: FormulaData) -> tuple[str, list[str], lis
     updated = tex
     for match in list(PLACEHOLDER_PATTERN.finditer(tex)):
         marker = match.group(0)
-        key = _key(match.group(1))
+        key = _key(match.group(1) or match.group(2))
         formula = formulas.latex.get(key)
         if not formula:
             missing.append(f"{marker}：未提供经确认的 LaTeX 公式。")

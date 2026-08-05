@@ -23,6 +23,21 @@ class FormulaTests(unittest.TestCase):
             self.assertIn(r"\usepackage{amsmath}", tex)
             self.assertIn(r"\tag{1}", tex)
 
+    def test_inserts_named_eq_placeholder(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "formulas.json"
+            source.write_text(
+                json.dumps({"formulas": [{"formula_id": "eq-loss", "latex": r"x + y", "tag": "loss"}]}),
+                encoding="utf-8",
+            )
+            formulas = load_formulas(str(source), root)
+            tex, matched, missing = apply_formulas("\\documentclass{article}\n[EQ:eq-loss]", formulas)
+
+            self.assertEqual(matched, ["[EQ:eq-loss] -> eqloss"])
+            self.assertFalse(missing)
+            self.assertIn(r"\tag{loss}", tex)
+
     def test_blocks_handwritten_image_without_confirmed_latex(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

@@ -2715,10 +2715,180 @@ def build_demo() -> gr.Blocks:
     return demo
 
 
+AGENT_WORKSPACE_CSS = """
+:root { --agent-ink:#172033; --agent-muted:#64748b; --agent-line:#dde4ee; --agent-canvas:#f4f7fb; --agent-panel:#ffffff; --agent-blue:#2563eb; --agent-green:#047857; --agent-amber:#b45309; }
+body { background: var(--agent-canvas) !important; }
+.agent-shell { max-width: 1440px; margin: 0 auto; }
+.agent-head { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:22px 0 14px; padding:18px 22px; border-bottom:1px solid var(--agent-line); background:transparent; }
+.agent-brand { display:flex; gap:12px; align-items:center; }.agent-mark { width:34px; height:34px; display:grid; place-items:center; color:#fff; background:#2563eb; border-radius:7px; font-weight:800; font-size:12px; }
+.agent-head h1 { margin:0; font-size:20px; letter-spacing:0; }.agent-head p { margin:3px 0 0; color:var(--agent-muted); font-size:13px; }.agent-local { color:var(--agent-green); font-size:12px; font-weight:700; }
+#agent-pages { border:0; background:transparent; }.agent-page { padding:20px 0 36px; }.agent-title { margin:0 0 16px; }.agent-title h2 { margin:0; font-size:18px; letter-spacing:0; }.agent-title p { margin:4px 0 0; color:var(--agent-muted); font-size:13px; }
+.agent-grid { display:grid; grid-template-columns:260px minmax(0,1fr) 330px; gap:14px; align-items:start; }.agent-two { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:14px; align-items:start; }
+.agent-panel { background:var(--agent-panel); border:1px solid var(--agent-line); border-radius:7px; box-shadow:0 1px 2px rgba(15,23,42,.03); }.agent-panel-pad { padding:16px; }.agent-panel h3 { margin:0 0 8px; font-size:14px; letter-spacing:0; }.agent-panel p { color:var(--agent-muted); font-size:13px; }.agent-stat { display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px solid #edf1f6; font-size:13px; }.agent-stat:last-child { border-bottom:0; }.agent-stat strong { font-size:12px; color:var(--agent-green); }
+.agent-guide { margin-top:14px; border-left:3px solid #93c5fd; padding:10px 12px; background:#f8fbff; color:#475569; font-size:12px; line-height:1.65; }.agent-guide code { color:#1d4ed8; font-size:12px; }
+.agent-queue { margin:0; padding:0; list-style:none; }.agent-queue li { padding:10px 0; border-bottom:1px solid #edf1f6; font-size:13px; }.agent-queue li:last-child { border:0; }.agent-queue small { display:block; margin-top:3px; color:var(--agent-muted); }
+.agent-project-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; padding:15px 16px; border-bottom:1px solid var(--agent-line); }.agent-project-row:last-child { border-bottom:0; }.agent-project-row h3 { margin:0; font-size:14px; }.agent-project-row p { margin:4px 0 0; font-size:12px; color:var(--agent-muted); }.agent-tag { display:inline-block; padding:3px 7px; border:1px solid #bbf7d0; background:#f0fdf4; color:#047857; font-size:11px; font-weight:700; border-radius:999px; }
+.agent-run { width:100%; margin-top:12px; }.agent-help .wrap { padding:0!important; }.agent-help summary { font-size:13px; color:#334155; }.agent-help pre { margin:10px 0 0; padding:10px; overflow:auto; border:1px solid #e2e8f0; background:#f8fafc; border-radius:5px; font-size:12px; line-height:1.55; }
+@media (max-width: 960px) { .agent-grid,.agent-two { grid-template-columns:1fr; }.agent-head { align-items:flex-start; }.agent-local { display:none; } }
+"""
+
+
+def _agent_plan_html(
+    source_path: str | None,
+    formula_bundle: str | None,
+    asset_bundle: str | None,
+    bibliography_file: str | None,
+    target_name: str,
+) -> str:
+    entries = [
+        ("原稿", source_path, "DOCX / Markdown / PDF / LaTeX"),
+        ("公式合集", formula_bundle, "JSON 或 ZIP，使用 [EQ:公式ID]"),
+        ("图表合集", asset_bundle, "ZIP + manifest.csv，使用 [FIG:id] 或 [TABLE:id]"),
+        ("参考文献", bibliography_file, "BibTeX，使用 [CITE:key]"),
+    ]
+    ready = sum(1 for _, path, _ in entries if path)
+    rows = "".join(
+        f"<li><strong>{escape(label)}</strong><small>{'已准备' if path else escape(hint)}</small></li>"
+        for label, path, hint in entries
+    )
+    target = escape((target_name or "未选择目标格式").strip())
+    return (
+        "<section class='agent-panel agent-panel-pad'><h3>Agent 任务计划</h3>"
+        f"<p>已准备 {ready}/4 类资料；目标：{target}</p><ul class='agent-queue'>{rows}</ul>"
+        "<p>Agent 只会执行已确认规则与可验证映射；缺失或低置信度项目会进入审阅队列。</p></section>"
+    )
+
+
+def build_agent_workspace() -> gr.Blocks:
+    rule_choices = _rule_dropdown_choices()
+    profile_choices_ui = _profile_dropdown_choices()
+    asset_manifest_template = TEMPLATE_DIR / "assets.manifest.csv"
+    with gr.Blocks(title="PaperFormat Agent", elem_classes=["agent-shell"]) as demo:
+        gr.HTML("""
+        <header class='agent-head'>
+          <div class='agent-brand'><div class='agent-mark'>PF</div><div><h1>PaperFormat Agent</h1><p>论文资料包到可审计排版交付</p></div></div>
+          <div class='agent-local'>LOCAL WORKSPACE · API KEY STAYS IN .env</div>
+        </header>
+        """)
+        with gr.Tabs(selected="projects", elem_id="agent-pages"):
+            with gr.Tab("项目", id="projects"):
+                with gr.Column(elem_classes=["agent-page"]):
+                    gr.HTML("<div class='agent-title'><h2>论文任务</h2><p>创建任务后，在工作台准备资料并由 Agent 完成排版。</p></div>")
+                    project_status = gr.HTML(value="""
+                    <section class='agent-panel'>
+                      <div class='agent-project-row'><div><h3>新建论文任务</h3><p>上传原稿、选择目标格式，然后开始 Agent 排版。</p></div><span class='agent-tag'>待开始</span></div>
+                      <div class='agent-project-row'><div><h3>本地优先</h3><p>文件处理、编译和交付均在当前电脑完成。</p></div><span class='agent-tag'>已就绪</span></div>
+                    </section>""")
+
+            with gr.Tab("工作台", id="workspace"):
+                with gr.Column(elem_classes=["agent-page"]):
+                    gr.HTML("<div class='agent-title'><h2>任务工作台</h2><p>准备四类资料，选择目标格式，确认后交由 Agent 执行。</p></div>")
+                    with gr.Row():
+                        project_name = gr.Textbox(label="项目名称", placeholder="例如：多模态医学影像研究", scale=3)
+                        target_name = gr.Textbox(label="目标期刊或学校", placeholder="例如：IEEE Transactions on ...", scale=4)
+                        automation_mode = gr.Dropdown(label="自动化等级", choices=["严格执行", "AI 辅助", "高度自动"], value="AI 辅助", scale=2)
+                    with gr.Row():
+                        uploaded = gr.File(label="原稿", type="filepath", file_types=[".docx", ".pdf", ".md", ".markdown", ".tex", ".zip"], scale=3)
+                        initial_asset_bundle = gr.File(label="图表合集 ZIP", type="filepath", file_types=[".zip"], scale=2)
+                        formula_bundle = gr.File(label="公式合集 JSON / ZIP", type="filepath", file_types=[".json", ".zip"], scale=2)
+                        bibliography_file = gr.File(label="参考文献 BibTeX", type="filepath", file_types=[".bib"], scale=2)
+                    with gr.Row():
+                        target_guide = gr.File(label="期刊指南或官方模板（可选，DeepSeek 识别）", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"], scale=3)
+                        initial_annotation_bundle = gr.File(label="图表题注工作簿（可选）", type="filepath", file_types=[".xlsx", ".zip"], scale=2)
+                        reference_article = gr.File(label="参考样稿（可选）", type="filepath", file_types=[".pdf", ".docx"], scale=2)
+                    with gr.Row():
+                        gr.DownloadButton("下载公式模板", value=str(FORMULA_TEMPLATE) if FORMULA_TEMPLATE.exists() else None, interactive=FORMULA_TEMPLATE.exists())
+                        gr.DownloadButton("下载图表题注模板", value=str(ANNOTATION_TEMPLATE) if ANNOTATION_TEMPLATE.exists() else None, interactive=ANNOTATION_TEMPLATE.exists())
+                        gr.DownloadButton("下载图表清单模板", value=str(asset_manifest_template) if asset_manifest_template.exists() else None, interactive=asset_manifest_template.exists())
+                    with gr.Accordion("资料准备与占位符说明", open=False, elem_classes=["agent-help"]):
+                        gr.HTML("""
+                        <div class='agent-guide'>原稿中可直接使用明确占位符；也可先上传资料，随后在审阅页处理 Agent 给出的映射建议。<pre>
+[FIG:fig-framework]    图像或示意图
+[TABLE:tab-results]    表格
+[EQ:eq-loss]           公式
+[CITE:smith2024; wang2023]  文献引用
+
+图表 ZIP 内使用 manifest.csv：id,type,file
+fig-framework,figure,framework.png
+tab-results,table,results.xlsx</pre></div>
+                        """)
+                    with gr.Row():
+                        journal_profile = gr.Dropdown(label="内置期刊规则包", choices=profile_choices_ui, value=RULE_NONE, scale=2)
+                        rule_file = gr.Dropdown(label="基础格式规则", choices=rule_choices, value=RULE_NONE, scale=2)
+                        requirement_text = gr.Textbox(label="补充要求（可选）", placeholder="例如：双栏、图注置下、IEEE 引用", scale=4)
+                    with gr.Row():
+                        match_button = gr.Button("匹配期刊", variant="secondary", scale=1)
+                        identify_rule_button = gr.Button("DeepSeek 识别规则", variant="secondary", scale=1)
+                        llm_rules_confirmed = gr.Checkbox(label="采用已勾选的 AI 规则", value=False, scale=2)
+                    journal_match = gr.Markdown(visible=False)
+                    llm_rule_review = gr.Markdown("上传官方指南后可由 DeepSeek 提取带证据的候选规则。")
+                    llm_rule_rows = gr.Dataframe(headers=["采用", "规则", "字段", "识别值", "依据", "置信度", "原文证据"], datatype=["bool", "str", "str", "str", "str", "number", "str"], type="array", interactive=True, wrap=True, max_height=240)
+                    llm_rule_analysis = gr.State()
+                    agent_plan = gr.HTML(value=_agent_plan_html(None, None, None, None, ""))
+                    output_path = gr.Textbox(label="交付目录", value=str(OUTPUT_DIR))
+                    run_button = gr.Button("开始 Agent 排版", variant="primary", elem_classes=["agent-run"])
+                    run_state = gr.State()
+
+            with gr.Tab("审阅", id="review"):
+                with gr.Column(elem_classes=["agent-page"]):
+                    gr.HTML("<div class='agent-title'><h2>Agent 审阅</h2><p>查看执行结果、处理例外，并在确认后生成正式交付。</p></div>")
+                    with gr.Row():
+                        structure_status = gr.HTML(value=_capability_feedback_html("等待任务", "完成排版后显示结构检查结果。"))
+                        asset_status = gr.HTML(value=_capability_feedback_html("等待任务", "完成排版后显示图表和公式映射结果。"))
+                        citation_status = gr.HTML(value=_capability_feedback_html("等待任务", "完成排版后显示文献引用映射结果。"))
+                    with gr.Row():
+                        comparison_view = gr.HTML(value=_initial_comparison_html(), scale=3)
+                        repair_status = gr.HTML(value=_capability_feedback_html("等待任务", "完成排版后显示自动修复和待确认项。"), scale=1)
+                    with gr.Accordion("执行摘要与审计轨迹", open=True):
+                        summary = gr.Markdown()
+                        activity_view = gr.HTML(value="<p>Agent 尚未运行。</p>")
+                    with gr.Accordion("排版预览", open=True):
+                        reviewer = gr.HTML(value=_reviewer_html(None))
+                    with gr.Accordion("问题处理工具", open=False):
+                        with gr.Row():
+                            structure_button = gr.Button("重新检查结构")
+                            asset_button = gr.Button("检查资产映射")
+                            citation_button = gr.Button("检查引用映射")
+                            repair_button = gr.Button("复核格式修复")
+                    report_file = gr.File(label="格式审计报告")
+                    compile_log = gr.File(label="编译日志")
+
+            with gr.Tab("交付", id="delivery"):
+                with gr.Column(elem_classes=["agent-page"]):
+                    gr.HTML("<div class='agent-title'><h2>交付中心</h2><p>正式导出前会检查未解析占位符、资料缺失和编译状态。</p></div>")
+                    delivery_dashboard = gr.HTML(value=_delivery_dashboard_html())
+                    formal_button = gr.Button("生成正式交付文件", variant="primary")
+                    with gr.Row():
+                        pdf_file = gr.File(label="正式 PDF", visible=False)
+                        word_file = gr.File(label="正式 Word (DOCX)", visible=False)
+                    with gr.Row():
+                        tex_file = gr.File(label="LaTeX 主文件", visible=False)
+                        project_file = gr.File(label="LaTeX 源码包", visible=False)
+
+        plan_inputs = [uploaded, formula_bundle, initial_asset_bundle, bibliography_file, target_name]
+        for component in plan_inputs:
+            component.change(_agent_plan_html, inputs=plan_inputs, outputs=agent_plan, queue=False)
+        match_button.click(match_journal, inputs=target_name, outputs=[journal_profile, journal_match])
+        identify_rule_button.click(identify_rule_document, inputs=target_guide, outputs=[llm_rule_review, llm_rule_rows, llm_rule_analysis, llm_rules_confirmed])
+        target_guide.change(_reset_rule_document_analysis, outputs=[llm_rule_review, llm_rule_rows, llm_rule_analysis, llm_rules_confirmed], queue=False)
+        run_outputs = [summary, tex_file, project_file, report_file, compile_log, pdf_file, word_file, reviewer, run_state, project_status, structure_status, asset_status, citation_status, repair_status, comparison_view, activity_view, delivery_dashboard]
+        run_button.click(
+            run_agent,
+            inputs=[uploaded, gr.State(""), rule_file, target_name, journal_profile, requirement_text, target_guide, reference_article, llm_rule_analysis, llm_rule_rows, llm_rules_confirmed, bibliography_file, initial_asset_bundle, initial_annotation_bundle, formula_bundle, output_path, gr.State(True)],
+            outputs=run_outputs,
+        )
+        formal_button.click(run_formal_export, inputs=run_state, outputs=[summary, tex_file, project_file, compile_log, pdf_file, word_file, reviewer, delivery_dashboard])
+        structure_button.click(inspect_structure, inputs=run_state, outputs=structure_status)
+        asset_button.click(inspect_assets, inputs=run_state, outputs=asset_status)
+        citation_button.click(inspect_citations, inputs=run_state, outputs=citation_status)
+        repair_button.click(inspect_repairs, inputs=run_state, outputs=repair_status)
+    return demo
+
+
 if __name__ == "__main__":
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    build_demo().launch(
-        css=APP_CSS,
+    build_agent_workspace().launch(
+        css=APP_CSS + AGENT_WORKSPACE_CSS,
         js=REVIEW_BRIDGE_JS,
         allowed_paths=[str(OUTPUT_DIR.resolve()), str(REVIEWER_PAGE.resolve()), str(ANNOTATION_TEMPLATE.resolve()), str(FORMULA_TEMPLATE.resolve())],
         server_name="127.0.0.1",

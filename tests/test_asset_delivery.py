@@ -60,6 +60,29 @@ class AssetDeliveryTests(unittest.TestCase):
             self.assertIn(r"\usepackage[UTF8]{ctex}", updated)
             self.assertIn(r"\caption{系统架构}", updated)
 
+    def test_manifest_binds_named_figure_placeholder(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            (bundle / "framework.png").write_bytes(b"image")
+            (bundle / "manifest.csv").write_text(
+                "id,type,file\nfig-framework,figure,framework.png\n",
+                encoding="utf-8",
+            )
+
+            updated, matched, missing, duplicates = apply_placeholder_assets(
+                "\\documentclass{article}\n\\begin{document}\n[FIG:fig-framework]\n\\end{document}",
+                bundle,
+                root / "project",
+                {},
+            )
+
+            self.assertIn(r"\includegraphics", updated)
+            self.assertEqual(matched, ["[FIG:fig-framework] -> framework.png"])
+            self.assertFalse(missing)
+            self.assertFalse(duplicates)
+
 
 if __name__ == "__main__":
     unittest.main()

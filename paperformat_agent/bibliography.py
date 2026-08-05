@@ -44,8 +44,8 @@ def _numbers_from_marker(value: str) -> list[int]:
 
 def apply_numeric_markers(
     text: str, bib_path: Path | None, actions: list[RepairAction]
-) -> tuple[str, list[tuple[int, str]], list[int]]:
-    r"""Turn manuscript markers such as [1, 3-4] into \cite{...} commands.
+) -> tuple[str, list[tuple[int | str, str]], list[int | str]]:
+    r"""Turn numeric and explicit [CITE:key] markers into \cite commands.
 
     The mapping deliberately follows the uploaded library order. This matches the
     conventional workflow where students export their existing numbered reference
@@ -57,8 +57,8 @@ def apply_numeric_markers(
     if not keys:
         return text, [], []
 
-    used_numbers: list[int] = []
-    unresolved: list[int] = []
+    used_numbers: list[int | str] = []
+    unresolved: list[int | str] = []
 
     def replace(match: re.Match[str]) -> str:
         numbers = _numbers_from_marker(match.group(1))
@@ -71,14 +71,30 @@ def apply_numeric_markers(
         used_numbers.extend(usable)
         return r"\cite{" + ",".join(keys[number - 1] for number in usable) + "}"
 
+    key_lookup = {key.lower(): key for key in keys}
+
+    def replace_explicit(match: re.Match[str]) -> str:
+        requested = [item.strip() for item in re.split(r"[;,]", match.group(1)) if item.strip()]
+        resolved = [key_lookup[item.lower()] for item in requested if item.lower() in key_lookup]
+        unresolved.extend(item for item in requested if item.lower() not in key_lookup)
+        used_numbers.extend(f"CITE:{key}" for key in resolved)
+        return r"\cite{" + ",".join(resolved) + "}" if resolved else match.group(0)
+
+    converted = re.sub(r"\[CITE:\s*([^\]]+)\]", replace_explicit, text, flags=re.IGNORECASE)
     # Numeric square-bracket markers are intentionally the only accepted shorthand.
     # This avoids changing mathematical expressions or author-year citations.
-    converted = re.sub(r"(?<!\\)\[\s*(\d+(?:\s*[-–,，]\s*\d+)*)\s*\]", replace, text)
+    converted = re.sub(r"(?<!\\)\[\s*(\d+(?:\s*[-–,，]\s*\d+)*)\s*\]", replace, converted)
     used_numbers = list(dict.fromkeys(used_numbers))
     unresolved = list(dict.fromkeys(unresolved))
     if used_numbers:
-        actions.append(RepairAction("numeric_citations", f"Converted {len(used_numbers)} numeric citation markers using the uploaded library order."))
-    return converted, [(number, keys[number - 1]) for number in used_numbers], unresolved
+        actions.append(RepairAction("citation_markers", f"Converted {len(used_numbers)} explicit or numeric citation markers."))
+    mappings: list[tuple[int | str, str]] = []
+    for marker in used_numbers:
+        if isinstance(marker, int):
+            mappings.append((marker, keys[marker - 1]))
+        else:
+            mappings.append((marker, marker.split(":", 1)[1]))
+    return converted, mappings, unresolved
 
 
 def remove_embedded_reference_list(text: str, actions: list[RepairAction]) -> str:
