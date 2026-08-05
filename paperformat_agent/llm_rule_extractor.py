@@ -31,6 +31,20 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
 
+
+def configure_model_runtime(api_key: str | None, base_url: str | None, model: str | None) -> str:
+    """Configure an optional OpenAI-compatible model for this local process only."""
+    global DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    if (api_key or "").strip():
+        DEEPSEEK_API_KEY = (api_key or "").strip()
+    if (base_url or "").strip():
+        DEEPSEEK_BASE_URL = (base_url or "").strip().rstrip("/")
+    if (model or "").strip():
+        DEEPSEEK_MODEL = (model or "").strip()
+    if DEEPSEEK_API_KEY:
+        return f"模型辅助已启用：`{DEEPSEEK_MODEL}`。密钥仅保存在当前本地进程。"
+    return "未配置模型：将使用本地确定性解析、排版和审计流程。"
+
 DOCUMENT_TYPES = {
     "official_guideline",
     "official_template",
