@@ -2741,6 +2741,7 @@ body { background: var(--agent-canvas) !important; }
 .agent-run { width:100%; margin-top:12px; }.agent-help .wrap { padding:0!important; }.agent-help summary { font-size:13px; color:#334155; }.agent-help pre { margin:10px 0 0; padding:10px; overflow:auto; border:1px solid #e2e8f0; background:#f8fafc; border-radius:5px; font-size:12px; line-height:1.55; }
 .agent-step { margin:18px 0 8px; display:flex; align-items:baseline; gap:9px; }.agent-step b { color:#2563eb; font-size:12px; }.agent-step h3 { margin:0; font-size:15px; }.agent-step span { color:var(--agent-muted); font-size:12px; }.agent-output { display:flex; align-items:center; gap:8px; margin:0 0 14px; color:#475569; font-size:13px; }.agent-output strong { color:#172033; }.agent-output i { font-style:normal; padding:3px 7px; border:1px solid #dbeafe; border-radius:999px; color:#1d4ed8; background:#eff6ff; font-size:11px; }.agent-advanced { margin-top:14px; }
 .agent-engine { display:grid; grid-template-columns:1fr 28px 1fr; gap:10px; align-items:center; padding:13px; border:1px solid #dbe5f0; border-radius:7px; background:#fff; }.agent-engine section { min-height:68px; padding:10px 12px; border-left:3px solid #2563eb; background:#f8fbff; }.agent-engine section:last-child { border-left-color:#059669; background:#f5fbf8; }.agent-engine strong { display:block; font-size:13px; }.agent-engine small { display:block; margin-top:3px; color:#64748b; font-size:11px; line-height:1.45; }.agent-engine b { color:#94a3b8; text-align:center; }.agent-review-layout { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:14px; align-items:start; }.agent-review-side { padding:14px; }.agent-review-side h3 { margin:0 0 5px; font-size:14px; }.agent-review-side p { margin:0 0 12px; color:#64748b; font-size:12px; } @media (max-width:960px) { .agent-engine,.agent-review-layout { grid-template-columns:1fr; }.agent-engine b { display:none; } }
+.project-start { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr); gap:32px; padding:30px 28px; border:1px solid var(--agent-line); border-top:3px solid #2563eb; border-radius:8px; background:#fff; }.project-start h2 { max-width:560px; margin:6px 0 8px; color:#172033; font-size:27px; line-height:1.25; letter-spacing:0; }.project-start p { max-width:600px; margin:0; color:#64748b; font-size:14px; line-height:1.65; }.project-kicker { color:#2563eb; font-size:11px; font-weight:800; letter-spacing:.08em; }.project-deliverables { display:flex; flex-wrap:wrap; gap:7px; margin-top:18px; }.project-deliverables span { padding:5px 8px; border:1px solid #dbeafe; border-radius:4px; background:#f8fbff; color:#1d4ed8; font-size:12px; font-weight:700; }.project-route { border-left:1px solid var(--agent-line); padding-left:26px; }.project-route h3 { margin:0 0 12px; font-size:14px; }.project-route ol { display:grid; gap:13px; margin:0; padding:0; list-style:none; counter-reset:route; }.project-route li { position:relative; min-height:31px; padding-left:38px; color:#475569; font-size:13px; }.project-route li::before { counter-increment:route; content:counter(route); position:absolute; left:0; top:-2px; display:grid; place-items:center; width:24px; height:24px; border:1px solid #bfdbfe; border-radius:50%; color:#2563eb; background:#eff6ff; font-size:11px; font-weight:800; }.project-route strong { display:block; color:#172033; font-size:13px; }.project-next { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; padding:13px 16px; border-left:3px solid #059669; background:#f3fbf7; color:#065f46; font-size:13px; }.project-next strong { color:#064e3b; }.project-next span { color:#64748b; font-size:12px; } @media (max-width:960px) { .project-start { grid-template-columns:1fr; }.project-route { border-left:0; border-top:1px solid var(--agent-line); padding:20px 0 0; } }
 @media (max-width: 960px) { .agent-grid,.agent-two { grid-template-columns:1fr; }.agent-head { align-items:flex-start; }.agent-local { display:none; } }
 """
 
@@ -2790,12 +2791,20 @@ def build_agent_workspace() -> gr.Blocks:
         with gr.Tabs(selected="projects", elem_id="agent-pages"):
             with gr.Tab("项目", id="projects"):
                 with gr.Column(elem_classes=["agent-page"]):
-                    gr.HTML("<div class='agent-title'><h2>论文任务</h2><p>创建任务后，在工作台准备资料并由 Agent 完成排版。</p></div>")
                     project_status = gr.HTML(value="""
-                    <section class='agent-panel'>
-                      <div class='agent-project-row'><div><h3>新建论文任务</h3><p>上传原稿、选择目标格式，然后开始 Agent 排版。</p></div><span class='agent-tag'>待开始</span></div>
-                      <div class='agent-project-row'><div><h3>本地优先</h3><p>文件处理、编译和交付均在当前电脑完成。</p></div><span class='agent-tag'>已就绪</span></div>
-                    </section>""")
+                    <section class='project-start'>
+                      <div>
+                        <div class='project-kicker'>PAPER DELIVERY WORKSPACE</div>
+                        <h2>从论文原稿到可提交的排版交付包</h2>
+                        <p>在工作台上传原稿和可选资料，选择目标格式后，Agent 自动完成结构检查、图表公式引用插入、格式排版和交付审计。</p>
+                        <div class='project-deliverables'><span>PDF</span><span>Word</span><span>LaTeX 源码</span><span>格式审计报告</span></div>
+                      </div>
+                      <div class='project-route'>
+                        <h3>一次任务，三个步骤</h3>
+                        <ol><li><strong>准备资料</strong>上传论文原稿，可选图表、公式和参考文献。</li><li><strong>选择目标</strong>选择期刊或学校格式，按需启用本地或云端辅助。</li><li><strong>审阅交付</strong>只处理例外，下载最终文件和审计记录。</li></ol>
+                      </div>
+                    </section>
+                    <div class='project-next'><strong>下一步：前往“工作台”创建第一个排版任务</strong><span>无需 API 也可以完成完整流程</span></div>""")
 
             with gr.Tab("工作台", id="workspace"):
                 with gr.Column(elem_classes=["agent-page"]):
