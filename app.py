@@ -2771,6 +2771,10 @@ def _agent_plan_html(
     )
 
 
+def _cloud_options_visibility(mode: str) -> dict:
+    return gr.update(visible=mode == "云端模型辅助")
+
+
 def build_agent_workspace() -> gr.Blocks:
     rule_choices = _rule_dropdown_choices()
     profile_choices_ui = _profile_dropdown_choices()
@@ -2801,7 +2805,7 @@ def build_agent_workspace() -> gr.Blocks:
                     """)
                     with gr.Row():
                         project_name = gr.Textbox(label="论文名称", placeholder="例如：多模态医学影像研究", scale=4)
-                        automation_mode = gr.Dropdown(label="处理方式", choices=["严格执行", "AI 辅助", "高度自动"], value="AI 辅助", scale=2)
+                        processing_mode = gr.Radio(label="处理方式", choices=["本地处理", "云端模型辅助"], value="本地处理", scale=2)
                     gr.HTML("<div class='agent-step'><b>01</b><h3>上传原稿</h3><span>必需：DOCX 或 Markdown 效果最佳，也支持 PDF、LaTeX 项目。</span></div>")
                     uploaded = gr.File(label="论文原稿", type="filepath", file_types=[".docx", ".pdf", ".md", ".markdown", ".tex", ".zip"])
                     gr.HTML("<div class='agent-step'><b>02</b><h3>补充资料</h3><span>按需上传。Agent 会自动检查是否与原稿中的标记对应。</span></div>")
@@ -2833,22 +2837,23 @@ def build_agent_workspace() -> gr.Blocks:
                         requirement_text = gr.Textbox(label="补充要求（可选）", placeholder="例如：双栏、图注置下、IEEE 引用", scale=4)
                         match_button = gr.Button("自动匹配", variant="secondary", scale=1)
                     journal_match = gr.Markdown(visible=False)
-                    with gr.Accordion("高级选项：上传期刊指南或使用 DeepSeek 识别规则", open=False, elem_classes=["agent-advanced"]):
-                        gr.HTML("<div class='agent-engine'><section><strong>本地排版引擎</strong><small>解析文件、插入图表公式、生成引用、编译与审计。始终可用。</small></section><b>+</b><section><strong>可选模型辅助</strong><small>理解期刊指南并标记不确定项；不会直接改写论文或伪造文献。</small></section></div>")
-                        with gr.Row():
-                            api_base_url = gr.Textbox(label="模型 API 地址", value="https://api.deepseek.com", placeholder="兼容 API 的基础地址", scale=3)
-                            api_model = gr.Textbox(label="模型名", value="deepseek-chat", placeholder="例如：deepseek-chat", scale=2)
-                            api_key = gr.Textbox(label="API Key（仅本次运行）", type="password", placeholder="可留空", scale=3)
-                            configure_model_button = gr.Button("启用模型", variant="secondary", scale=1)
-                        model_status = gr.Markdown("未配置模型：将使用本地确定性解析、排版和审计流程。")
+                    with gr.Accordion("高级资料（可选）", open=False, elem_classes=["agent-advanced"]):
                         with gr.Row():
                             target_guide = gr.File(label="期刊指南或官方模板", type="filepath", file_types=[".pdf", ".docx", ".md", ".markdown", ".txt"], scale=3)
                             initial_annotation_bundle = gr.File(label="图表题注工作簿", type="filepath", file_types=[".xlsx", ".zip"], scale=2)
                             reference_article = gr.File(label="参考样稿", type="filepath", file_types=[".pdf", ".docx"], scale=2)
+                    with gr.Group(visible=False) as cloud_options:
+                        gr.HTML("<div class='agent-engine'><section><strong>本地排版引擎</strong><small>始终负责文件解析、插入、编译和审计，保障结果可复现。</small></section><b>+</b><section><strong>云端模型辅助</strong><small>用于理解期刊指南和解释不确定项；不会直接改写论文或伪造文献。</small></section></div>")
                         with gr.Row():
-                            identify_rule_button = gr.Button("解析指南", variant="secondary", scale=1)
+                            api_base_url = gr.Textbox(label="模型 API 地址", value="https://api.deepseek.com", placeholder="兼容 API 的基础地址", scale=3)
+                            api_model = gr.Textbox(label="模型名", value="deepseek-chat", placeholder="例如：deepseek-chat", scale=2)
+                            api_key = gr.Textbox(label="API Key（仅本次运行）", type="password", placeholder="不会写入项目文件", scale=3)
+                            configure_model_button = gr.Button("连接模型", variant="secondary", scale=1)
+                        model_status = gr.Markdown("填写后可连接 DeepSeek 或其他兼容模型。")
+                        with gr.Row():
+                            identify_rule_button = gr.Button("用模型解析指南", variant="secondary", scale=1)
                             llm_rules_confirmed = gr.Checkbox(label="采用已勾选的 AI 规则", value=False, scale=2)
-                        llm_rule_review = gr.Markdown("上传官方指南后可由 DeepSeek 提取带证据的候选规则。")
+                        llm_rule_review = gr.Markdown("模型会提取带证据的候选规则；未配置时仍可使用本地规则完成排版。")
                         llm_rule_rows = gr.Dataframe(headers=["采用", "规则", "字段", "识别值", "依据", "置信度", "原文证据"], datatype=["bool", "str", "str", "str", "str", "number", "str"], type="array", interactive=True, wrap=True, max_height=240)
                         llm_rule_analysis = gr.State()
                     agent_plan = gr.HTML(value=_agent_plan_html(None, None, None, None, ""))
@@ -2895,6 +2900,7 @@ def build_agent_workspace() -> gr.Blocks:
         plan_inputs = [uploaded, formula_bundle, initial_asset_bundle, bibliography_file, target_name]
         for component in plan_inputs:
             component.change(_agent_plan_html, inputs=plan_inputs, outputs=agent_plan, queue=False)
+        processing_mode.change(_cloud_options_visibility, inputs=processing_mode, outputs=cloud_options, queue=False)
         match_button.click(match_journal, inputs=target_name, outputs=[journal_profile, journal_match])
         configure_model_button.click(configure_model_runtime, inputs=[api_key, api_base_url, api_model], outputs=model_status)
         identify_rule_button.click(identify_rule_document, inputs=target_guide, outputs=[llm_rule_review, llm_rule_rows, llm_rule_analysis, llm_rules_confirmed])
